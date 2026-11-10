@@ -1,0 +1,29 @@
+import Foundation
+import os
+
+/// Small append-only log at ~/Library/Logs/LogiLite.log (also mirrored to the unified log).
+enum Log {
+    private static let logger = Logger(subsystem: "local.logilite.app", category: "app")
+    private static let url = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Library/Logs/LogiLite.log")
+    private static let queue = DispatchQueue(label: "logilite.log")
+    private static let formatter: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+
+    static func info(_ message: String) {
+        logger.info("\(message, privacy: .public)")
+        let line = "\(formatter.string(from: Date())) \(message)\n"
+        queue.async {
+            if let h = try? FileHandle(forWritingTo: url) {
+                h.seekToEndOfFile()
+                h.write(Data(line.utf8))
+                try? h.close()
+            } else {
+                try? Data(line.utf8).write(to: url)
+            }
+        }
+    }
+}

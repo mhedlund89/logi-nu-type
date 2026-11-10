@@ -4,20 +4,26 @@ import Combine
 import IOKit.hid
 import SwiftUI
 
-final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate {
     let state = AppState()
     lazy var engine = Engine(state: state)
     private var statusItem: NSStatusItem!
     private var settingsWindow: NSWindow?
     private var cancellables = Set<AnyCancellable>()
+    private lazy var panel: MenuPanelController = MenuPanelController { [unowned self] in
+        AnyView(MenuPanel(state: self.state, engine: self.engine,
+                          openSettings: { [unowned self] in self.panel.close(); self.openSettings() },
+                          quitLogiOptions: { Self.quitLogiOptions() },
+                          openPrivacy: { Self.openPrivacyPane($0) }))
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         requestPermissions()
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        let menu = NSMenu()
-        menu.delegate = self
-        statusItem.menu = menu
+        statusItem.button?.target = self
+        statusItem.button?.action = #selector(togglePanel)
+        statusItem.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
         state.objectWillChange
             .debounce(for: .milliseconds(100), scheduler: RunLoop.main)
             .sink { [weak self] in self?.updateStatusButton() }
@@ -25,6 +31,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         updateStatusButton()
 
         engine.start()
+        if UserDefaults.standard.bool(forKey: "debugActions") {
+            // Debug only: `defaults write local.logilite.app debugActions -bool true`, then post
+            // a distributed notification named local.logilite.debug.<actionKind> to run an action in-process.
+            for kind in ActionKind.allCases {
+                DistributedNotificationCenter.default().addObserver(
+                    forName: Notification.Name("local.logilite.debug.\(kind.rawValue)"), object: nil, queue: .main) { [weak self] _ in
+                    Log.info("debug trigger: \(kind.rawValue) axTrusted=\(AXIsProcessTrusted())")
+                    ActionRunner.press(Action(kind), mouse: self?.engine.devices.mouse)
+                    ActionRunner.release(Action(kind))
+                }
+            }
+        }
         checkEnvironment()
         Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in self?.checkEnvironment() }
     }
@@ -42,6 +60,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)
         }
         state.inputMonitoringGranted = IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted
+        Log.info("launch: accessibility=\(state.accessibilityGranted) inputMonitoring=\(state.inputMonitoringGranted) bundle=\(Bundle.main.bundlePath)")
     }
 
     private func checkEnvironment() {
@@ -89,83 +108,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    func menuNeedsUpdate(_ menu: NSMenu) {
-        menu.removeAllItems()
-
-        func info(_ title: String) {
-            let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-            item.isEnabled = false
-            menu.addItem(item)
-        }
-        func battery(_ d: DeviceSnapshot) -> String {
-            guard let b = d.battery else { return "\(d.name)" }
-            return "\(d.name) — \(b)%\(d.charging ? " ⚡︎" : "")"
-        }
-
-        info(state.mouse.map(battery) ?? "Mouse not connected")
-        info(state.keyboard.map(battery) ?? "Keyboard not connected")
-        menu.addItem(.separator())
-
-        info("Profile: \(state.config.profile(for: state.frontBundleID)?.name ?? "All apps")")
-        if let free = state.freeSpin {
-            let item = NSMenuItem(title: "Wheel: \(free ? "Free spin" : "Ratchet") (click to switch)",
-                                  action: #selector(toggleWheel), keyEquivalent: "")
-            item.target = self
-            menu.addItem(item)
-        }
-        let smart = NSMenuItem(title: "SmartShift", action: #selector(toggleSmartShift), keyEquivalent: "")
-        smart.target = self
-        smart.state = state.config.pointer.smartShift ? .on : .off
-        menu.addItem(smart)
-        menu.addItem(.separator())
-
-        let flow = NSMenuItem(title: "Flow", action: #selector(toggleFlow), keyEquivalent: "")
-        flow.target = self
-        flow.state = state.config.flow.enabled ? .on : .off
-        menu.addItem(flow)
-        if state.config.flow.enabled { info("   \(state.flowStatus)") }
-        menu.addItem(.separator())
-
-        if !state.accessibilityGranted {
-            let item = NSMenuItem(title: "⚠︎ Allow Accessibility access…", action: #selector(openAccessibility), keyEquivalent: "")
-            item.target = self
-            menu.addItem(item)
-        }
-        if !state.inputMonitoringGranted {
-            let item = NSMenuItem(title: "⚠︎ Allow Input Monitoring…", action: #selector(openInputMonitoring), keyEquivalent: "")
-            item.target = self
-            menu.addItem(item)
-        }
-        if state.logiOptionsRunning {
-            let item = NSMenuItem(title: "⚠︎ Logi Options is running — quit it", action: #selector(quitLogi), keyEquivalent: "")
-            item.target = self
-            menu.addItem(item)
-        }
-
-        let settings = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
-        settings.target = self
-        menu.addItem(settings)
-        let quit = NSMenuItem(title: "Quit Logi Lite", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        menu.addItem(quit)
+    @objc private func togglePanel() {
+        guard let button = statusItem.button else { return }
+        panel.toggle(relativeTo: button)
     }
 
-    @objc private func toggleWheel() { engine.devices.mouse?.toggleWheelMode() }
-    @objc private func toggleSmartShift() { state.config.pointer.smartShift.toggle() }
-    @objc private func toggleFlow() {
-        if !state.config.flow.enabled && state.config.flow.secret == nil {
-            state.config.flow.secret = FlowService.newSecret()
-            state.config.flow.enabled = true
-            openSettings()
-        } else {
-            state.config.flow.enabled.toggle()
-        }
-    }
-    @objc private func quitLogi() { Self.quitLogiOptions() }
-    @objc private func openAccessibility() {
-        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
-    }
-    @objc private func openInputMonitoring() {
-        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")!)
+    private static func openPrivacyPane(_ anchor: String) {
+        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?\(anchor)")!)
     }
 
     @objc func openSettings() {
@@ -181,6 +130,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSApp.activate(ignoringOtherApps: true)
         settingsWindow?.makeKeyAndOrderFront(nil)
     }
+}
+
+// Developer aid: `LogiLite --render-panel out.png [dark]` draws the menu panel with sample data and exits.
+// Must run before anything touches the mouse.
+if let i = CommandLine.arguments.firstIndex(of: "--render-panel"), CommandLine.arguments.count > i + 1 {
+    let out = URL(fileURLWithPath: CommandLine.arguments[i + 1])
+    let state = AppState()
+    state.mouse = DeviceSnapshot(name: "MX Master 2S", battery: 90, charging: false, host: 0, hostCount: 3)
+    state.keyboard = DeviceSnapshot(name: "MX Keys Mac", battery: 55, charging: true, host: 0, hostCount: 3)
+    state.freeSpin = false
+    state.frontBundleID = "com.google.Chrome"
+    state.accessibilityGranted = true
+    state.inputMonitoringGranted = true
+    state.logiOptionsRunning = true
+    state.flowStatus = "Looking for your other Mac…"
+    let view = MenuPanel(state: state, engine: Engine(state: state), openSettings: {}, quitLogiOptions: {}, openPrivacy: { _ in })
+        .environment(\.colorScheme, CommandLine.arguments.contains("dark") ? .dark : .light)
+    MainActor.assumeIsolated {
+        let renderer = ImageRenderer(content: view)
+        renderer.scale = 2
+        if let cg = renderer.cgImage,
+           let png = NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:]) {
+            try? png.write(to: out)
+            print("wrote \(out.path)")
+        }
+    }
+    exit(0)
 }
 
 let app = NSApplication.shared

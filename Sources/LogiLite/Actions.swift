@@ -3,9 +3,12 @@ import CoreGraphics
 
 enum ActionRunner {
     private static let source = CGEventSource(stateID: .hidSystemState)
+    /// Tagged on every event we post so our own event tap lets it through untouched.
+    static let syntheticMarker: Int64 = 0x4C4C_4954 // "LLIT"
 
     /// Perform an action on button press. Mouse-button actions are split into down/up so drags work.
     static func press(_ action: Action, mouse: MouseController?) {
+        Log.info("action \(action.kind.rawValue) axTrusted=\(AXIsProcessTrusted())")
         switch action.kind {
         case .passthrough, .nothing: break
         case .missionControl: dock("com.apple.expose.awake", fallbackArg: nil)
@@ -68,6 +71,7 @@ enum ActionRunner {
         for down in [true, false] {
             guard let e = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: down) else { continue }
             e.flags = flags
+            e.setIntegerValueField(.eventSourceUserData, value: syntheticMarker)
             e.post(tap: .cghidEventTap)
         }
     }
@@ -89,6 +93,7 @@ enum ActionRunner {
         guard let e = CGEvent(mouseEventSource: source, mouseType: type, mouseCursorPosition: loc,
                               mouseButton: CGMouseButton(rawValue: UInt32(button)) ?? .center) else { return }
         e.setIntegerValueField(.mouseEventButtonNumber, value: Int64(button))
+        e.setIntegerValueField(.eventSourceUserData, value: syntheticMarker)
         e.post(tap: .cghidEventTap)
     }
 

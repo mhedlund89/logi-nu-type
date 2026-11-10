@@ -43,7 +43,8 @@ final class EventTap {
 
     func start() -> Bool {
         guard tap == nil else { return true }
-        let types: [CGEventType] = [.scrollWheel, .mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged]
+        let types: [CGEventType] = [.scrollWheel, .mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged,
+                                     .otherMouseDown, .otherMouseUp]
         let mask = types.reduce(CGEventMask(0)) { $0 | (CGEventMask(1) << $1.rawValue) }
         let ctx = Unmanaged.passUnretained(self).toOpaque()
         guard let port = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap,
@@ -71,13 +72,23 @@ final class Engine {
     lazy var flow = FlowService(state: state, devices: devices)
     private let tap = EventTap()
 
-    private struct GestureTrack { var dx = 0; var dy = 0; var fired = false; let config: ButtonConfig }
+    private struct GestureTrack {
+        var dx = 0.0, dy = 0.0, fired = false
+        let config: ButtonConfig
+        let started = Date()
+        let origin = CGEvent(source: nil)?.location ?? .zero
+    }
     private var gestures: [UInt16: GestureTrack] = [:]
     private var held: [UInt16: Action] = [:]
     private var thumbAccumulator = 0.0
     private var lastDesktopSwitch = Date.distantPast
     private var observers: [NSObjectProtocol] = []
-    private static let gestureThreshold = 50.0
+    /// Cursor travel (points) that turns a held gesture button into a directional gesture.
+    private static let gestureThreshold = 40.0
+    private static let stuckTimeout = 6.0
+    /// Standard mouse buttons we swallowed on press, so the matching release is swallowed too.
+    private var swallowedButtons: Set<Int64> = []
+    private static let standardButtons: [Int64: ButtonID] = [2: .middle, 3: .back, 4: .forward]
 
     init(state: AppState) { self.state = state }
 
@@ -87,13 +98,12 @@ final class Engine {
             forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] note in
             let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
             self?.state.frontBundleID = app?.bundleIdentifier
-            self?.applyDiversion()
         })
 
         devices.onMouseAttached = { [weak self] m in
             guard let self else { return }
+            Log.info("mouse attached: \(m.name)")
             m.onButton = { [weak self] cid, down in self?.button(cid, down: down) }
-            m.onMovement = { [weak self] dx, dy in self?.movement(dx, dy) }
             self.gestures.removeAll()
             self.held.removeAll()
             self.applyDiversion()
@@ -128,7 +138,7 @@ final class Engine {
     }
 
     private func startTapWhenPermitted() {
-        if tap.start() { state.accessibilityGranted = true; return }
+        if tap.start() { state.accessibilityGranted = true; Log.info("event tap started"); return }
         state.accessibilityGranted = false
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in self?.startTapWhenPermitted() }
     }
@@ -146,14 +156,19 @@ final class Engine {
 
     // MARK: Device settings
 
+    /// Only the thumb and wheel-mode buttons need HID++ diversion; back/forward/middle arrive as ordinary mouse
+    /// buttons and are remapped in the event tap. Divert every button that *any* profile customises, so switching
+    /// apps never writes to the mouse ("Default" is emulated in software). Raw-XY is never requested: on the
+    /// MX Master 2S over Bluetooth a lost release leaves raw-XY on and freezes the cursor.
     func applyDiversion() {
         guard let m = devices.mouse else { return }
         var wanted: [UInt16: DiversionMode] = [:]
-        for b in ButtonID.allCases {
-            let cfg = state.config.effectiveButton(b, bundleID: state.frontBundleID)
-            if cfg.useGestures { wanted[b.cid] = .divertWithMovement }
-            else if cfg.action.kind != .passthrough { wanted[b.cid] = .divert }
+        let profiles = [state.config.defaults] + state.config.apps
+        for b in [ButtonID.gesture, .wheelMode] {
+            let configs = profiles.compactMap { $0.button(b) }
+            if configs.contains(where: { $0.useGestures || $0.action.kind != .passthrough }) { wanted[b.cid] = .divert }
         }
+        Log.info("diversion: \(wanted.map { String(format: "0x%02X=%@", $0.key, "\($0.value)") }.sorted().joined(separator: " "))")
         m.setDiversion(wanted)
     }
 
@@ -175,10 +190,12 @@ final class Engine {
 
     private func button(_ cid: UInt16, down: Bool) {
         guard let b = ButtonID(cid: cid) else { return }
+        Log.info("button \(b.rawValue) \(down ? "down" : "up") app=\(state.frontBundleID ?? "?")")
         if down {
             let cfg = state.config.effectiveButton(b, bundleID: state.frontBundleID)
             if cfg.useGestures {
                 gestures[cid] = GestureTrack(config: cfg)
+                armWatchdog(cid)
             } else {
                 let a = resolved(cfg.action, b)
                 held[cid] = a
@@ -193,13 +210,27 @@ final class Engine {
         }
     }
 
-    private func movement(_ dx: Int, _ dy: Int) {
+    /// If a release never arrives, drop the gesture and resync the control so the next press registers.
+    private func armWatchdog(_ cid: UInt16) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.stuckTimeout) { [weak self] in
+            guard let self, let g = self.gestures[cid], Date().timeIntervalSince(g.started) >= Self.stuckTimeout else { return }
+            Log.info(String(format: "watchdog: control 0x%02X held %.0fs with no release; resetting", cid, Self.stuckTimeout))
+            self.gestures.removeValue(forKey: cid)
+            self.devices.mouse?.resetStuckControl(cid)
+        }
+    }
+
+    /// Gesture direction comes from ordinary cursor movement while the button is held; once a direction fires,
+    /// the cursor is put back where the press started.
+    private func movement(_ dx: Double, _ dy: Double) {
         for (cid, var g) in gestures where !g.fired {
             g.dx += dx
             g.dy += dy
-            if hypot(Double(g.dx), Double(g.dy)) >= Self.gestureThreshold, let b = ButtonID(cid: cid) {
+            if hypot(g.dx, g.dy) >= Self.gestureThreshold, let b = ButtonID(cid: cid) {
                 g.fired = true
                 let dir: GestureDirection = abs(g.dx) > abs(g.dy) ? (g.dx > 0 ? .right : .left) : (g.dy > 0 ? .down : .up)
+                CGWarpMouseCursorPosition(g.origin)
+                CGAssociateMouseAndMouseCursorPosition(1)
                 fire(resolved(g.config.gesture(dir), b))
             }
             gestures[cid] = g
@@ -214,9 +245,35 @@ final class Engine {
     // MARK: Event tap
 
     private func handle(_ type: CGEventType, _ e: CGEvent) -> CGEvent? {
-        if type == .scrollWheel { return scroll(e) }
-        flow.pointerMoved(e, isDrag: type != .mouseMoved)
-        return e
+        if e.getIntegerValueField(.eventSourceUserData) == ActionRunner.syntheticMarker { return e }
+        switch type {
+        case .scrollWheel:
+            return scroll(e)
+        case .otherMouseDown, .otherMouseUp:
+            return standardButton(e, down: type == .otherMouseDown)
+        default:
+            if !gestures.isEmpty {
+                movement(e.getDoubleValueField(.mouseEventDeltaX), e.getDoubleValueField(.mouseEventDeltaY))
+            }
+            flow.pointerMoved(e, isDrag: type != .mouseMoved)
+            return e
+        }
+    }
+
+    /// Back / forward / middle: pass through untouched unless the current app's profile remaps them.
+    private func standardButton(_ e: CGEvent, down: Bool) -> CGEvent? {
+        let number = e.getIntegerValueField(.mouseEventButtonNumber)
+        guard let b = Self.standardButtons[number] else { return e }
+        if down {
+            let cfg = state.config.effectiveButton(b, bundleID: state.frontBundleID)
+            guard cfg.useGestures || cfg.action.kind != .passthrough else { return e }
+            swallowedButtons.insert(number)
+            button(b.cid, down: true)
+            return nil
+        }
+        guard swallowedButtons.remove(number) != nil else { return e }
+        button(b.cid, down: false)
+        return nil
     }
 
     private func scroll(_ e: CGEvent) -> CGEvent? {

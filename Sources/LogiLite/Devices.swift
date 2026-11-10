@@ -85,12 +85,12 @@ enum ControlID {
 }
 
 enum DiversionMode: Equatable {
-    case native, divert, divertWithMovement
+    case native, divert
+    /// setCidReporting flags. Raw-XY is always written as "off (valid)" so a previous run can't leave it on.
     var flags: UInt8 {
         switch self {
-        case .native: return 0x22             // divert=0 (valid), rawXY=0 (valid)
-        case .divert: return 0x23             // divert=1 (valid), rawXY=0 (valid)
-        case .divertWithMovement: return 0x33 // divert=1 (valid), rawXY=1 (valid)
+        case .native: return 0x22 // divert=0 (valid), rawXY=0 (valid)
+        case .divert: return 0x23 // divert=1 (valid), rawXY=0 (valid)
         }
     }
 }
@@ -101,7 +101,6 @@ final class MouseController: LogiDevice {
     private(set) var autoDisengage: Int?
 
     var onButton: ((UInt16, Bool) -> Void)?
-    var onMovement: ((Int, Int) -> Void)?
 
     private var pressed: Set<UInt16> = []
     private var diversion: [UInt16: DiversionMode] = [:]
@@ -115,13 +114,33 @@ final class MouseController: LogiDevice {
 
     // MARK: Buttons
 
+    /// Diversion requested while a button was held; applied once everything is released.
+    private var pendingDiversion: [UInt16: DiversionMode]?
+
+    var isAnyButtonHeld: Bool { !pressed.isEmpty }
+
+    /// Changing a control's reporting while a diverted button is held makes the MX Master 2S lose that
+    /// button's release event (it then stays "held" and streams movement to us). So never write mid-press.
     func setDiversion(_ wanted: [UInt16: DiversionMode]) {
+        if isAnyButtonHeld { pendingDiversion = wanted; return }
+        pendingDiversion = nil
         for cid in ControlID.all {
             let mode = wanted[cid] ?? .native
             guard diversion[cid] != mode else { continue }
             diversion[cid] = mode
             hid.call(Feature.reprogControls, 3, [UInt8(cid >> 8), UInt8(cid & 0xFF), mode.flags])
         }
+    }
+
+    /// Recover a control the mouse believes is stuck down: cycle its reporting off and back on.
+    func resetStuckControl(_ cid: UInt16) {
+        let mode = diversion[cid] ?? .native
+        pressed.remove(cid)
+        hid.call(Feature.reprogControls, 3, [UInt8(cid >> 8), UInt8(cid & 0xFF), DiversionMode.native.flags])
+        if mode != .native {
+            hid.call(Feature.reprogControls, 3, [UInt8(cid >> 8), UInt8(cid & 0xFF), mode.flags])
+        }
+        if pressed.isEmpty, let pending = pendingDiversion { setDiversion(pending) }
     }
 
     /// Hand every button back to the mouse's built-in behaviour, synchronously (safe to call while quitting).
@@ -140,13 +159,11 @@ final class MouseController: LogiDevice {
                     let cid = UInt16(params[i]) << 8 | UInt16(params[i + 1])
                     if cid != 0 { now.insert(cid) }
                 }
-                for cid in now.subtracting(pressed) { onButton?(cid, true) }
-                for cid in pressed.subtracting(now) { onButton?(cid, false) }
+                let downs = now.subtracting(pressed), ups = pressed.subtracting(now)
                 pressed = now
-            } else if function == 1, params.count >= 4 {
-                let dx = Int(Int16(bitPattern: UInt16(params[0]) << 8 | UInt16(params[1])))
-                let dy = Int(Int16(bitPattern: UInt16(params[2]) << 8 | UInt16(params[3])))
-                onMovement?(dx, dy)
+                for cid in downs { onButton?(cid, true) }
+                for cid in ups { onButton?(cid, false) }
+                if now.isEmpty, let pending = pendingDiversion { setDiversion(pending) }
             }
             return
         }
