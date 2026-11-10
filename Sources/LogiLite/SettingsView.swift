@@ -3,69 +3,373 @@ import ServiceManagement
 import SwiftUI
 import UniformTypeIdentifiers
 
+// Settings window laid out like Logi Options (device drawing with clickable callouts, action list beside it,
+// per-app profiles across the top), drawn as a line-art mechanical spec sheet.
+
 struct SettingsView: View {
     @ObservedObject var state: AppState
     let engine: Engine
+    @Environment(\.colorScheme) private var scheme
+    @State private var tab: SettingsTab
+
+    /// false only for --render-panel (ImageRenderer can't draw ScrollView contents).
+    private let scrolls: Bool
+
+    init(state: AppState, engine: Engine, initialTab: SettingsTab = .mouse, scrolls: Bool = true) {
+        self.state = state
+        self.engine = engine
+        self.scrolls = scrolls
+        _tab = State(initialValue: initialTab)
+    }
+
+    enum SettingsTab: String, CaseIterable, Identifiable {
+        case mouse = "MOUSE", pointer = "POINT & SCROLL", flow = "FLOW", device = "DEVICE"
+        var id: String { rawValue }
+        var jp: String {
+            switch self { case .mouse: return "操作系"; case .pointer: return "ポインタ"; case .flow: return "フロー"; case .device: return "装置" }
+        }
+    }
 
     var body: some View {
-        TabView {
-            ButtonsTab(state: state).tabItem { Label("Buttons", systemImage: "computermouse") }
-            PointerTab(state: state, engine: engine).tabItem { Label("Point & Scroll", systemImage: "scroll") }
-            FlowTab(state: state).tabItem { Label("Flow", systemImage: "display.2") }
-            GeneralTab(state: state).tabItem { Label("General", systemImage: "gearshape") }
+        let p = WirePalette(scheme)
+        VStack(spacing: 0) {
+            header(p)
+            Rectangle().fill(p.ink).frame(height: 1)
+            if scrolls { ScrollView { content(p) } } else { content(p); Spacer(minLength: 0) }
         }
-        .padding(12)
-        .frame(minWidth: 720, minHeight: 600)
+        .background(p.paper)
+        .overlay(CornerMarks(p: p))
+        .frame(minWidth: 900, minHeight: 660)
+    }
+
+    private func content(_ p: WirePalette) -> some View {
+        Group {
+            switch tab {
+            case .mouse: MouseTab(state: state, p: p)
+            case .pointer: PointerTab(state: state, engine: engine, p: p)
+            case .flow: FlowTab(state: state, p: p)
+            case .device: DeviceTab(state: state, p: p)
+            }
+        }
+        .padding(22)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+
+    private func header(_ p: WirePalette) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text("■ LOGI LITE").font(WireFont.label(15, .bold)).foregroundStyle(p.ink)
+                        Text("ロジ・ライト  設定").font(WireFont.jp).foregroundStyle(p.faint)
+                    }
+                    Text("\(state.mouse?.name.uppercased() ?? "NO UNIT CONNECTED") · SPEC SHEET")
+                        .font(WireFont.label(9)).foregroundStyle(p.faint)
+                }
+                Spacer()
+                VStack(spacing: 4) {
+                    CellGauge(label: "MOUSE", device: state.mouse, p: p, cells: 10).frame(width: 230)
+                    CellGauge(label: "KEYS", device: state.keyboard, p: p, cells: 10).frame(width: 230)
+                }
+            }
+            HStack(spacing: 0) {
+                ForEach(SettingsTab.allCases) { t in
+                    let on = tab == t
+                    Button { tab = t } label: {
+                        HStack(spacing: 5) {
+                            Text(t.rawValue).font(WireFont.label(10, .bold))
+                            Text(t.jp).font(WireFont.jp).opacity(0.6)
+                        }
+                        .foregroundStyle(on ? p.paper : p.ink)
+                        .padding(.horizontal, 14).padding(.vertical, 7)
+                        .background(on ? p.ink : .clear)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(on ? .isSelected : [])
+                    Rectangle().fill(p.ink).frame(width: 1)
+                }
+            }
+            .fixedSize()
+            .overlay(Rectangle().strokeBorder(p.ink, lineWidth: 1))
+        }
+        .padding(.horizontal, 22)
+        .padding(.top, 34)   // clear the transparent title bar's window buttons
+        .padding(.bottom, 14)
     }
 }
 
-// MARK: - Buttons
+// MARK: - Shared building blocks
 
-struct ButtonsTab: View {
-    @ObservedObject var state: AppState
-    @State private var selection: UUID?
-
-    private var selectedID: UUID { selection ?? state.config.defaults.id }
+struct WireCard<Content: View>: View {
+    let title: String
+    let jp: String
+    var fig: String? = nil
+    let p: WirePalette
+    @ViewBuilder let content: () -> Content
 
     var body: some View {
-        HStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 0) {
-                List(selection: $selection) {
-                    Label("All apps", systemImage: "square.grid.2x2").tag(state.config.defaults.id as UUID?)
-                    Section("App-specific") {
-                        ForEach(state.config.apps) { p in
-                            Label(p.name, systemImage: "app").tag(p.id as UUID?)
-                        }
-                    }
-                }
-                HStack {
-                    Button { addApp() } label: { Image(systemName: "plus") }
-                    Button { removeSelected() } label: { Image(systemName: "minus") }
-                        .disabled(selectedID == state.config.defaults.id)
-                    Spacer()
-                }
-                .buttonStyle(.borderless)
-                .padding(6)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text("■ " + title).font(WireFont.label(10, .bold)).foregroundStyle(p.ink)
+                Text(jp).font(WireFont.jp).foregroundStyle(p.faint)
+                Spacer()
+                if let fig { Text(fig).font(WireFont.label(7)).foregroundStyle(p.faint) }
             }
-            .frame(width: 200)
-            Divider()
-            ProfileEditor(profile: profileBinding(selectedID),
-                          isDefault: selectedID == state.config.defaults.id,
-                          defaults: state.config.defaults)
-                .id(selectedID)
+            content()
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .overlay(Rectangle().strokeBorder(p.ink, lineWidth: 1))
+    }
+}
+
+struct WireMiniButton: View {
+    let title: String
+    let p: WirePalette
+    var enabled = true
+    let action: () -> Void
+    @State private var hover = false
+
+    var body: some View {
+        Button(action: action) {
+            Text(title).font(WireFont.label(9, .bold))
+                .foregroundStyle(hover && enabled ? p.paper : p.ink)
+                .padding(.horizontal, 9).padding(.vertical, 5)
+                .background(hover && enabled ? p.ink : .clear)
+                .overlay(Rectangle().strokeBorder(p.ink, lineWidth: 1))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hover = $0 }
+        .opacity(enabled ? 1 : 0.35)
+        .disabled(!enabled)
+    }
+}
+
+struct WireRadio: View {
+    let title: String
+    let on: Bool
+    let p: WirePalette
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                ZStack {
+                    Circle().strokeBorder(p.ink, lineWidth: 1)
+                    if on { Circle().fill(p.ink).padding(2.5) }
+                }
+                .frame(width: 11, height: 11)
+                Text(title).font(WireFont.label(9, on ? .bold : .regular)).foregroundStyle(p.ink).lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(on ? .isSelected : [])
+    }
+}
+
+struct WireTextField: View {
+    let placeholder: String
+    @Binding var text: String
+    let p: WirePalette
+
+    var body: some View {
+        TextField(placeholder, text: $text)
+            .textFieldStyle(.plain)
+            .font(WireFont.label(10))
+            .foregroundStyle(p.ink)
+            .padding(.horizontal, 8).padding(.vertical, 6)
+            .overlay(Rectangle().strokeBorder(p.ink, style: StrokeStyle(lineWidth: 1, dash: [3, 2])))
+    }
+}
+
+/// Ruler-style slider: hairline track with tick marks and a square outlined thumb.
+struct WireSlider: View {
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    let step: Double
+    var ticks = 10
+    let p: WirePalette
+    var onCommit: () -> Void = {}
+
+    var body: some View {
+        GeometryReader { g in
+            let w = g.size.width - 10
+            let t = (value - range.lowerBound) / (range.upperBound - range.lowerBound)
+            ZStack(alignment: .topLeading) {
+                Canvas { ctx, size in
+                    let mid = size.height / 2
+                    var track = Path()
+                    track.move(to: CGPoint(x: 5, y: mid)); track.addLine(to: CGPoint(x: size.width - 5, y: mid))
+                    ctx.stroke(track, with: .color(p.hairline), lineWidth: 1)
+                    var fill = Path()
+                    fill.move(to: CGPoint(x: 5, y: mid)); fill.addLine(to: CGPoint(x: 5 + t * w, y: mid))
+                    ctx.stroke(fill, with: .color(p.ink), lineWidth: 2)
+                    var marks = Path()
+                    for i in 0...ticks {
+                        let x = 5 + CGFloat(i) / CGFloat(ticks) * w
+                        let h: CGFloat = i % 5 == 0 ? 6 : 3
+                        marks.move(to: CGPoint(x: x, y: mid + 4)); marks.addLine(to: CGPoint(x: x, y: mid + 4 + h))
+                    }
+                    ctx.stroke(marks, with: .color(p.faint), lineWidth: 0.8)
+                }
+                Rectangle().fill(p.paper)
+                    .overlay(Rectangle().strokeBorder(p.ink, lineWidth: 1.2))
+                    .frame(width: 10, height: 14)
+                    .position(x: 5 + t * w, y: g.size.height / 2)
+            }
+            .contentShape(Rectangle())
+            .gesture(DragGesture(minimumDistance: 0)
+                .onChanged { v in
+                    let raw = range.lowerBound + Double(max(0, min(1, (v.location.x - 5) / w))) * (range.upperBound - range.lowerBound)
+                    value = (raw / step).rounded() * step
+                }
+                .onEnded { _ in onCommit() })
+        }
+        .frame(height: 24)
+        .accessibilityElement()
+        .accessibilityValue("\(Int(value))")
+        .accessibilityAdjustableAction { dir in
+            value = dir == .increment ? min(range.upperBound, value + step) : max(range.lowerBound, value - step)
+            onCommit()
+        }
+    }
+}
+
+// MARK: - MOUSE tab
+
+private enum ProfileSelection: Hashable { case all, app(UUID) }
+
+struct MouseTab: View {
+    @ObservedObject var state: AppState
+    let p: WirePalette
+    @State private var selection: ProfileSelection = .all
+    @State private var part: MouseSchematic.Part = .gesture
+    @State private var direction: GestureDirection = .click
+
+    private var profileID: UUID? { if case .app(let id) = selection { return id }; return nil }
+    private var isDefault: Bool { profileID == nil }
+
+    private var profile: Binding<Profile> {
+        Binding(
+            get: { profileID.flatMap { id in state.config.apps.first { $0.id == id } } ?? state.config.defaults },
+            set: { p in
+                if let i = state.config.apps.firstIndex(where: { $0.id == p.id }) { state.config.apps[i] = p }
+                else { state.config.defaults = p }
+            })
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            profileBar
+            HStack(alignment: .top, spacing: 22) {
+                VStack(alignment: .leading, spacing: 8) {
+                    InteractiveSchematic(callouts: callouts, connected: state.mouse != nil, p: p, selected: $part)
+                    Text("SELECT A NUMBERED CALLOUT OR A PART OF THE DRAWING TO ASSIGN IT")
+                        .font(WireFont.label(8)).foregroundStyle(p.faint)
+                }
+                inspector.frame(minWidth: 300, maxWidth: .infinity)
+            }
+        }
+        .onChange(of: part) { _, _ in direction = .click }
+    }
+
+    private var profileBar: some View {
+        HStack(spacing: 6) {
+            Text("PROFILE").font(WireFont.label(8, .semibold)).foregroundStyle(p.faint)
+            chip("ALL APPS", .all)
+            ForEach(state.config.apps) { app in chip(app.name.uppercased(), .app(app.id)) }
+            WireMiniButton(title: "+ ADD APP", p: p) { addApp() }
+            Spacer()
+            if !isDefault {
+                WireMiniButton(title: "REMOVE PROFILE", p: p) {
+                    state.config.apps.removeAll { $0.id == profileID }
+                    selection = .all
+                }
+            }
         }
     }
 
-    private func profileBinding(_ id: UUID) -> Binding<Profile> {
-        Binding(
-            get: {
-                if id == state.config.defaults.id { return state.config.defaults }
-                return state.config.apps.first { $0.id == id } ?? state.config.defaults
-            },
-            set: { p in
-                if p.id == state.config.defaults.id { state.config.defaults = p }
-                else if let i = state.config.apps.firstIndex(where: { $0.id == p.id }) { state.config.apps[i] = p }
-            })
+    private func chip(_ title: String, _ sel: ProfileSelection) -> some View {
+        let on = selection == sel
+        return Button { selection = sel } label: {
+            Text(title).font(WireFont.label(9, .semibold)).lineLimit(1)
+                .foregroundStyle(on ? p.paper : p.ink)
+                .padding(.horizontal, 8).padding(.vertical, 5)
+                .background(on ? p.ink : .clear)
+                .overlay(Rectangle().strokeBorder(p.ink, lineWidth: 1))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(on ? .isSelected : [])
+    }
+
+    private var callouts: [MouseSchematic.Callout] {
+        let prof = profile.wrappedValue
+        func cfg(_ b: ButtonID) -> ButtonConfig {
+            prof.button(b) ?? state.config.defaults.button(b) ?? ButtonConfig(action: Action(.passthrough))
+        }
+        func short(_ a: Action) -> String {
+            let s = a.kind == .passthrough ? "NATIVE" : a.summary.uppercased()
+            return s.count > 18 ? String(s.prefix(17)) + "…" : s
+        }
+        func describe(_ b: ButtonID) -> String {
+            let c = cfg(b)
+            let inherited = !isDefault && prof.button(b) == nil ? "↳ " : ""
+            return inherited + (c.useGestures ? "GESTURES · " + short(c.gesture(.click)) : short(c.action))
+        }
+        let thumb = prof.thumbWheel ?? state.config.defaults.thumbWheel ?? .horizontalScroll
+        return [
+            .init(index: 1, part: .wheel, title: "MIDDLE", value: describe(.middle)),
+            .init(index: 2, part: .wheelMode, title: "WHEEL BTN", value: describe(.wheelMode)),
+            .init(index: 3, part: .thumbWheel, title: "THUMB WHEEL",
+                  value: (!isDefault && prof.thumbWheel == nil ? "↳ " : "") + thumb.title.uppercased()),
+            .init(index: 4, part: .forward, title: "FORWARD", value: describe(.forward)),
+            .init(index: 5, part: .back, title: "BACK", value: describe(.back)),
+            .init(index: 6, part: .gesture, title: "GESTURE", value: describe(.gesture)),
+        ]
+    }
+
+    private var buttonForPart: ButtonID? {
+        switch part {
+        case .wheel: return .middle
+        case .wheelMode: return .wheelMode
+        case .forward: return .forward
+        case .back: return .back
+        case .gesture: return .gesture
+        case .thumbWheel: return nil
+        }
+    }
+
+    @ViewBuilder private var inspector: some View {
+        let index = callouts.first { $0.part == part }?.index ?? 0
+        if let b = buttonForPart {
+            ButtonInspector(index: index, button: b, isDefault: isDefault, profileName: profile.wrappedValue.name,
+                            config: Binding(get: { profile.wrappedValue.buttons[b.rawValue] },
+                                            set: { profile.wrappedValue.buttons[b.rawValue] = $0 }),
+                            fallback: state.config.defaults.button(b) ?? ButtonConfig(action: Action(.passthrough)),
+                            direction: $direction, p: p)
+        } else {
+            WireCard(title: "\(index) THUMB WHEEL", jp: "サムホイール", fig: profile.wrappedValue.name.uppercased(), p: p) {
+                if !isDefault {
+                    WireCheck(label: "SAME AS ALL APPS", on: profile.wrappedValue.thumbWheel == nil, p: p) {
+                        profile.wrappedValue.thumbWheel = profile.wrappedValue.thumbWheel == nil
+                            ? (state.config.defaults.thumbWheel ?? .horizontalScroll) : nil
+                    }
+                }
+                if isDefault || profile.wrappedValue.thumbWheel != nil {
+                    ForEach(ThumbWheelAction.allCases) { a in
+                        WireRadio(title: a.title.uppercased(),
+                                  on: (profile.wrappedValue.thumbWheel ?? .horizontalScroll) == a, p: p) {
+                            profile.wrappedValue.thumbWheel = a
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private func addApp() {
@@ -74,135 +378,209 @@ struct ButtonsTab: View {
         panel.directoryURL = URL(fileURLWithPath: "/Applications")
         guard panel.runModal() == .OK, let url = panel.url,
               let bundle = Bundle(url: url), let id = bundle.bundleIdentifier else { return }
-        if let existing = state.config.apps.first(where: { $0.bundleID == id }) { selection = existing.id; return }
+        if let existing = state.config.apps.first(where: { $0.bundleID == id }) { selection = .app(existing.id); return }
         let name = FileManager.default.displayName(atPath: url.path).replacingOccurrences(of: ".app", with: "")
-        let p = Profile(name: name, bundleID: id, appPath: url.path)
-        state.config.apps.append(p)
-        selection = p.id
-    }
-
-    private func removeSelected() {
-        state.config.apps.removeAll { $0.id == selectedID }
-        selection = state.config.defaults.id
+        let new = Profile(name: name, bundleID: id, appPath: url.path)
+        state.config.apps.append(new)
+        selection = .app(new.id)
     }
 }
 
-struct ProfileEditor: View {
-    @Binding var profile: Profile
-    let isDefault: Bool
-    let defaults: Profile
+/// The mouse drawing at 1.5×, with invisible hit targets over each callout row and each part.
+struct InteractiveSchematic: View {
+    let callouts: [MouseSchematic.Callout]
+    let connected: Bool
+    let p: WirePalette
+    @Binding var selected: MouseSchematic.Part
+
+    private static let design = CGSize(width: 340, height: 196)
+    private static let origin = CGPoint(x: 18, y: 8)   // must match MouseSchematic's drawing origin
+    private let scale: CGFloat = 1.5
 
     var body: some View {
-        Form {
-            Section {
-                ForEach(ButtonID.allCases) { b in
-                    ButtonEditor(button: b, isDefault: isDefault,
-                                 config: Binding(get: { profile.buttons[b.rawValue] },
-                                                 set: { profile.buttons[b.rawValue] = $0 }),
-                                 fallback: defaults.button(b) ?? ButtonConfig(action: Action(.passthrough)))
-                }
-            } header: {
-                Text(isDefault ? "Buttons — every app" : "Buttons — \(profile.name)")
-            }
-            Section("Thumb wheel") {
-                Picker("Thumb wheel", selection: Binding(
-                    get: { profile.thumbWheel },
-                    set: { profile.thumbWheel = $0 })) {
-                    if !isDefault { Text("Same as All apps (\((defaults.thumbWheel ?? .horizontalScroll).title))").tag(ThumbWheelAction?.none) }
-                    ForEach(ThumbWheelAction.allCases) { Text($0.title).tag(ThumbWheelAction?.some($0)) }
+        let rowH = (Self.design.height - 8) / CGFloat(max(callouts.count, 1))
+        ZStack(alignment: .topLeading) {
+            MouseSchematic(callouts: callouts, connected: connected, p: p,
+                           selected: callouts.first { $0.part == selected }?.index)
+                .frame(width: Self.design.width, height: Self.design.height)
+            ForEach(Array(callouts.enumerated()), id: \.offset) { i, c in
+                hit(c).frame(width: Self.design.width - 166, height: rowH)
+                    .position(x: 166 + (Self.design.width - 166) / 2, y: 4 + rowH * (CGFloat(i) + 0.5))
+                if let a = MouseSchematic.anchors[c.part] {
+                    hit(c).frame(width: 16, height: 16).position(x: Self.origin.x + a.x, y: Self.origin.y + a.y)
                 }
             }
         }
-        .formStyle(.grouped)
+        .frame(width: Self.design.width, height: Self.design.height, alignment: .topLeading)
+        .scaleEffect(scale, anchor: .topLeading)
+        .frame(width: Self.design.width * scale, height: Self.design.height * scale, alignment: .topLeading)
+    }
+
+    private func hit(_ c: MouseSchematic.Callout) -> some View {
+        Button { selected = c.part } label: { Rectangle().fill(Color.clear).contentShape(Rectangle()) }
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(c.index). \(c.title): \(c.value)")
     }
 }
 
-struct ButtonEditor: View {
+struct ButtonInspector: View {
+    let index: Int
     let button: ButtonID
     let isDefault: Bool
+    let profileName: String
     @Binding var config: ButtonConfig?
     let fallback: ButtonConfig
-
-    private var inherits: Bool { !isDefault && config == nil }
+    @Binding var direction: GestureDirection
+    let p: WirePalette
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(button.title).fontWeight(.semibold)
-                Spacer()
-                if !isDefault {
-                    Toggle("Same as All apps", isOn: Binding(
-                        get: { config == nil },
-                        set: { config = $0 ? nil : fallback }))
-                    .toggleStyle(.checkbox)
-                }
+        WireCard(title: "\(index) \(button.title.uppercased())", jp: "ボタン割当", fig: profileName.uppercased(), p: p) {
+            if !isDefault {
+                WireCheck(label: "SAME AS ALL APPS", on: config == nil, p: p) { config = config == nil ? fallback : nil }
             }
-            if inherits {
-                Text(describe(fallback)).foregroundStyle(.secondary).font(.callout)
+            if !isDefault && config == nil {
+                Text("USES: " + describe(fallback)).font(WireFont.label(9)).foregroundStyle(p.faint)
+                    .fixedSize(horizontal: false, vertical: true)
             } else {
                 let cfg = Binding<ButtonConfig>(get: { config ?? fallback }, set: { config = $0 })
-                Toggle("Hold and move for gestures", isOn: cfg.useGestures)
+                WireCheck(label: "HOLD + MOVE FOR GESTURES", on: cfg.wrappedValue.useGestures, p: p) {
+                    cfg.wrappedValue.useGestures.toggle()
+                }
                 if cfg.wrappedValue.useGestures {
-                    ForEach(GestureDirection.allCases) { d in
-                        ActionEditor(label: d.title, action: Binding(
-                            get: { cfg.wrappedValue.gesture(d) },
-                            set: { cfg.wrappedValue.gestures[d.rawValue] = $0 }))
-                    }
+                    GestureCross(config: cfg.wrappedValue, selected: $direction, p: p)
+                    Text("ASSIGNING: \(direction.title.uppercased())").font(WireFont.label(8, .semibold)).foregroundStyle(p.faint)
+                    ActionList(action: Binding(get: { cfg.wrappedValue.gesture(direction) },
+                                               set: { cfg.wrappedValue.gestures[direction.rawValue] = $0 }), p: p)
                 } else {
-                    ActionEditor(label: "Action", action: cfg.action)
+                    ActionList(action: cfg.action, p: p)
                 }
             }
         }
-        .padding(.vertical, 4)
     }
 
     private func describe(_ c: ButtonConfig) -> String {
         if c.useGestures {
-            return "Gestures: " + GestureDirection.allCases.map { "\($0.rawValue) → \(c.gesture($0).summary)" }.joined(separator: ", ")
+            return "GESTURES — " + GestureDirection.allCases.map { "\($0.rawValue.uppercased()) \(c.gesture($0).summary.uppercased())" }
+                .joined(separator: " · ")
         }
-        return c.action.summary
+        return c.action.summary.uppercased()
     }
 }
 
-struct ActionEditor: View {
-    let label: String
-    @Binding var action: Action
+/// Up / left / click / right / down boxes in a cross, like a gesture diagram.
+struct GestureCross: View {
+    let config: ButtonConfig
+    @Binding var selected: GestureDirection
+    let p: WirePalette
 
     var body: some View {
-        HStack {
-            Picker(label, selection: $action.kind) {
-                ForEach(ActionKind.allCases) { Text($0.title).tag($0) }
+        Grid(horizontalSpacing: 4, verticalSpacing: 4) {
+            GridRow { Color.clear.gridCellUnsizedAxes([.horizontal, .vertical]); cell(.up, "▲"); Color.clear.gridCellUnsizedAxes([.horizontal, .vertical]) }
+            GridRow { cell(.left, "◀"); cell(.click, "●"); cell(.right, "▶") }
+            GridRow { Color.clear.gridCellUnsizedAxes([.horizontal, .vertical]); cell(.down, "▼"); Color.clear.gridCellUnsizedAxes([.horizontal, .vertical]) }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func cell(_ d: GestureDirection, _ glyph: String) -> some View {
+        let on = selected == d
+        let a = config.gesture(d)
+        let short: [ActionKind: String] = [
+            .passthrough: "NATIVE", .desktopLeft: "DESKTOP ←", .desktopRight: "DESKTOP →", .missionControl: "MISSION CTRL",
+            .previousTrack: "PREV TRACK", .toggleWheelMode: "WHEEL MODE", .screenshot: "SCREENSHOT", .launchpad: "APPS",
+        ]
+        let summary = short[a.kind] ?? a.summary.uppercased()
+        return Button { selected = d } label: {
+            VStack(spacing: 2) {
+                Text(glyph).font(.system(size: 9))
+                Text(summary.count > 14 ? String(summary.prefix(13)) + "…" : summary)
+                    .font(WireFont.label(7, .semibold)).lineLimit(1)
             }
-            .frame(maxWidth: 380)
-            switch action.kind {
-            case .keystroke:
-                KeyRecorder(combo: $action.keys)
-            case .openApp:
-                Button(action.path.map { URL(fileURLWithPath: $0).deletingPathExtension().lastPathComponent } ?? "Choose app…") {
+            .foregroundStyle(on ? p.paper : p.ink)
+            .frame(width: 104, height: 34)
+            .background(on ? p.ink : .clear)
+            .overlay(Rectangle().strokeBorder(p.ink, lineWidth: 1))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(d.title): \(a.summary)")
+        .accessibilityAddTraits(on ? .isSelected : [])
+    }
+}
+
+struct ActionList: View {
+    @Binding var action: Action
+    let p: WirePalette
+
+    private static let groups: [(String, [ActionKind])] = [
+        ("DEFAULT", [.passthrough, .nothing]),
+        ("SYSTEM", [.missionControl, .appExpose, .showDesktop, .launchpad, .desktopLeft, .desktopRight, .screenshot]),
+        ("NAVIGATION", [.browserBack, .browserForward, .middleClick, .toggleWheelMode]),
+        ("EDITING", [.copy, .paste, .undo, .redo]),
+        ("MEDIA", [.playPause, .nextTrack, .previousTrack, .volumeUp, .volumeDown, .mute]),
+        ("CUSTOM", [.keystroke, .openApp, .openURL]),
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(Self.groups, id: \.0) { group in
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 6) {
+                        Text(group.0).font(WireFont.label(7, .bold)).foregroundStyle(p.faint)
+                        Rectangle().fill(p.hairline).frame(height: 1)
+                    }
+                    LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)],
+                              alignment: .leading, spacing: 5) {
+                        ForEach(group.1) { kind in
+                            WireRadio(title: kind.title.replacingOccurrences(of: "…", with: "").uppercased(),
+                                      on: action.kind == kind, p: p) { action.kind = kind }
+                        }
+                    }
+                }
+            }
+            detail
+        }
+    }
+
+    @ViewBuilder private var detail: some View {
+        switch action.kind {
+        case .keystroke:
+            HStack { Text("SHORTCUT").font(WireFont.label(8, .semibold)).foregroundStyle(p.faint); KeyRecorder(combo: $action.keys, p: p) }
+        case .openApp:
+            HStack {
+                Text("APP").font(WireFont.label(8, .semibold)).foregroundStyle(p.faint)
+                WireMiniButton(title: action.path.map { URL(fileURLWithPath: $0).deletingPathExtension().lastPathComponent.uppercased() } ?? "CHOOSE APP…", p: p) {
                     let panel = NSOpenPanel()
                     panel.allowedContentTypes = [.application]
                     panel.directoryURL = URL(fileURLWithPath: "/Applications")
                     if panel.runModal() == .OK { action.path = panel.url?.path }
                 }
-            case .openURL:
-                TextField("https://…", text: Binding(get: { action.url ?? "" }, set: { action.url = $0 }))
-                    .frame(width: 200)
-            default:
-                EmptyView()
             }
+        case .openURL:
+            WireTextField(placeholder: "https://…", text: Binding(get: { action.url ?? "" }, set: { action.url = $0 }), p: p)
+        default:
+            EmptyView()
         }
     }
 }
 
 struct KeyRecorder: View {
     @Binding var combo: KeyCombo?
+    let p: WirePalette
     @State private var recording = false
     @State private var monitor: Any?
 
     var body: some View {
-        Button(recording ? "Press shortcut… (Esc cancels)" : (combo?.display ?? "Record shortcut")) {
-            recording ? stop() : start()
+        Button { recording ? stop() : start() } label: {
+            Text(recording ? "PRESS SHORTCUT… (ESC CANCELS)" : (combo?.display ?? "RECORD SHORTCUT"))
+                .font(WireFont.label(10, .bold))
+                .foregroundStyle(recording ? p.paper : p.ink)
+                .padding(.horizontal, 10).padding(.vertical, 6)
+                .background(recording ? p.ink : .clear)
+                .overlay(Rectangle().strokeBorder(p.ink, style: StrokeStyle(lineWidth: 1, dash: recording ? [] : [3, 2])))
+                .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
         .onDisappear { stop() }
     }
 
@@ -249,184 +627,276 @@ struct KeyRecorder: View {
     }
 }
 
-// MARK: - Point & Scroll
+// MARK: - POINT & SCROLL tab
 
 struct PointerTab: View {
     @ObservedObject var state: AppState
     let engine: Engine
+    let p: WirePalette
     @State private var dpi: Double = 1000
 
     var body: some View {
-        Form {
-            Section("Pointer speed") {
+        VStack(alignment: .leading, spacing: 16) {
+            WireCard(title: "POINTER SPEED", jp: "ポインタ速度", fig: "FIG. 2-1", p: p) {
                 if state.mouse != nil {
-                    HStack {
-                        Slider(value: $dpi, in: 200...4000, step: 50) { editing in
-                            if !editing { engine.setDPI(Int(dpi)) }
-                        }
-                        Text("\(Int(dpi)) DPI").monospacedDigit().frame(width: 80, alignment: .trailing)
+                    HStack(spacing: 14) {
+                        Text("200").font(WireFont.label(8)).foregroundStyle(p.faint)
+                        WireSlider(value: $dpi, range: 200...4000, step: 50, ticks: 38, p: p) { engine.setDPI(Int(dpi)) }
+                        Text("4000").font(WireFont.label(8)).foregroundStyle(p.faint)
+                        Text("\(Int(dpi)) DPI").font(WireFont.label(12, .bold)).foregroundStyle(p.ink)
+                            .monospacedDigit().frame(width: 90, alignment: .trailing)
                     }
-                    Text("macOS's own Tracking Speed setting still applies on top of this.")
-                        .font(.caption).foregroundStyle(.secondary)
+                    Text("SENSOR RESOLUTION. MACOS TRACKING SPEED STILL APPLIES ON TOP.").font(WireFont.label(8)).foregroundStyle(p.faint)
                 } else {
-                    Text("Mouse not connected").foregroundStyle(.secondary)
+                    Text("— UNIT NOT CONNECTED —").font(WireFont.label(9, .bold)).foregroundStyle(p.faint)
                 }
             }
-            Section("Scroll wheel") {
-                HStack {
-                    Text("Wheel mode: \(state.freeSpin == nil ? "unknown" : (state.freeSpin! ? "Free spin" : "Ratchet"))")
-                    Spacer()
-                    Button("Switch") { engine.devices.mouse?.toggleWheelMode() }.disabled(state.mouse == nil)
-                }
-                Toggle("SmartShift (flick the wheel to free-spin automatically)", isOn: $state.config.pointer.smartShift)
-                if state.config.pointer.smartShift {
-                    HStack {
-                        Text("Sensitivity")
-                        Slider(value: Binding(get: { Double(state.config.pointer.smartShiftThreshold) },
-                                              set: { state.config.pointer.smartShiftThreshold = Int($0) }), in: 1...50, step: 1)
-                        Text("\(state.config.pointer.smartShiftThreshold)").monospacedDigit().frame(width: 30)
+            WireCard(title: "SCROLL WHEEL", jp: "ホイール", fig: "FIG. 2-2", p: p) {
+                HStack(spacing: 14) {
+                    Text("MODE").font(WireFont.label(8, .semibold)).foregroundStyle(p.faint)
+                    SegmentSwitch(options: ["RATCHET", "FREE SPIN"], selected: state.freeSpin.map { $0 ? 1 : 0 },
+                                  enabled: state.mouse != nil, p: p) { i in
+                        if (i == 1) != (state.freeSpin ?? false) { engine.devices.mouse?.toggleWheelMode() }
                     }
                 }
-                Toggle("Reverse scroll direction (this mouse only)", isOn: $state.config.pointer.reverseWheel)
-                Toggle("Reverse thumb wheel direction", isOn: $state.config.pointer.reverseThumbWheel)
+                WireCheck(label: "SMARTSHIFT — FLICK THE WHEEL TO FREE-SPIN AUTOMATICALLY", on: state.config.pointer.smartShift, p: p) {
+                    state.config.pointer.smartShift.toggle()
+                }
+                if state.config.pointer.smartShift {
+                    HStack(spacing: 14) {
+                        Text("SENSITIVITY").font(WireFont.label(8, .semibold)).foregroundStyle(p.faint)
+                        WireSlider(value: Binding(get: { Double(state.config.pointer.smartShiftThreshold) },
+                                                  set: { state.config.pointer.smartShiftThreshold = Int($0) }),
+                                   range: 1...50, step: 1, ticks: 10, p: p)
+                        Text("\(state.config.pointer.smartShiftThreshold)").font(WireFont.label(11, .bold)).foregroundStyle(p.ink)
+                            .monospacedDigit().frame(width: 30, alignment: .trailing)
+                    }
+                }
+            }
+            WireCard(title: "DIRECTION", jp: "方向", fig: "FIG. 2-3", p: p) {
+                WireCheck(label: "REVERSE SCROLL DIRECTION (THIS MOUSE ONLY)", on: state.config.pointer.reverseWheel, p: p) {
+                    state.config.pointer.reverseWheel.toggle()
+                }
+                WireCheck(label: "REVERSE THUMB WHEEL DIRECTION", on: state.config.pointer.reverseThumbWheel, p: p) {
+                    state.config.pointer.reverseThumbWheel.toggle()
+                }
             }
         }
-        .formStyle(.grouped)
         .onAppear { dpi = Double(state.dpi ?? state.config.pointer.dpi ?? 1000) }
         .onChange(of: state.dpi) { _, new in if let new { dpi = Double(new) } }
     }
 }
 
-// MARK: - Flow
+// MARK: - FLOW tab
 
 struct FlowTab: View {
     @ObservedObject var state: AppState
+    let p: WirePalette
     @State private var entered = ""
 
     var body: some View {
-        Form {
-            Section {
-                Toggle("Enable Flow", isOn: Binding(
-                    get: { state.config.flow.enabled },
-                    set: { on in
-                        if on && state.config.flow.secret == nil { state.config.flow.secret = FlowService.newSecret() }
-                        state.config.flow.enabled = on
-                    }))
-                LabeledContent("Status", value: state.flowStatus)
-            } footer: {
-                Text("Install Logi Lite on your other Mac too. Both Macs need to be on the same network and use the same pairing code.")
-            }
-
-            Section("Pairing code") {
-                if let s = state.config.flow.secret {
-                    HStack {
-                        Text(s).font(.system(.body, design: .monospaced)).textSelection(.enabled)
-                        Spacer()
-                        Button("Copy") {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(s, forType: .string)
+        VStack(alignment: .leading, spacing: 16) {
+            WireCard(title: "FLOW", jp: "フロー", fig: "FIG. 3-1", p: p) {
+                HStack(alignment: .center, spacing: 24) {
+                    FlowEdgePicker(edge: $state.config.flow.otherMacEdge, enabled: state.config.flow.enabled,
+                                   peer: state.config.flow.peerName, p: p)
+                        .frame(width: 300, height: 190)
+                    VStack(alignment: .leading, spacing: 10) {
+                        WireCheck(label: "ENABLE FLOW", on: state.config.flow.enabled, p: p) {
+                            if state.config.flow.secret == nil { state.config.flow.secret = FlowService.newSecret() }
+                            state.config.flow.enabled.toggle()
                         }
-                        Button("New code") { state.config.flow.secret = FlowService.newSecret() }
-                    }
-                }
-                HStack {
-                    TextField("Paste the code from your other Mac", text: $entered)
-                    Button("Use this code") {
-                        let code = entered.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-                        guard code.filter({ $0.isLetter || $0.isNumber }).count >= 16 else { return }
-                        state.config.flow.secret = code
-                        entered = ""
+                        Text("STATUS: " + (state.config.flow.enabled ? state.flowStatus.uppercased() : "OFF"))
+                            .font(WireFont.label(9, .semibold)).foregroundStyle(p.ink)
+                        Text("CLICK A SLOT AROUND “THIS” TO PLACE YOUR OTHER MAC. PUSH THE CURSOR PAST THAT EDGE TO SWITCH.")
+                            .font(WireFont.label(8)).foregroundStyle(p.faint).fixedSize(horizontal: false, vertical: true)
                     }
                 }
             }
-
-            Section("Layout") {
-                Picker("Your other Mac is", selection: $state.config.flow.otherMacEdge) {
-                    ForEach(FlowEdge.allCases) { Text($0.title).tag($0) }
+            HStack(alignment: .top, spacing: 16) {
+                WireCard(title: "PAIRING CODE", jp: "ペアリング", fig: "FIG. 3-2", p: p) {
+                    if let s = state.config.flow.secret {
+                        Text(s).font(WireFont.label(13, .bold)).foregroundStyle(p.ink).textSelection(.enabled)
+                        HStack {
+                            WireMiniButton(title: "COPY", p: p) {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(s, forType: .string)
+                            }
+                            WireMiniButton(title: "NEW CODE", p: p) { state.config.flow.secret = FlowService.newSecret() }
+                        }
+                    } else {
+                        WireMiniButton(title: "CREATE CODE", p: p) { state.config.flow.secret = FlowService.newSecret() }
+                    }
+                    HStack {
+                        WireTextField(placeholder: "PASTE CODE FROM OTHER MAC", text: $entered, p: p)
+                        WireMiniButton(title: "USE", p: p, enabled: entered.filter { $0.isLetter || $0.isNumber }.count >= 16) {
+                            state.config.flow.secret = entered.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+                            entered = ""
+                        }
+                    }
                 }
-                Toggle("Only switch while holding Control", isOn: $state.config.flow.requireControl)
-                Toggle("MX Keys switches along with the mouse", isOn: $state.config.flow.keyboardFollows)
-                Toggle("Share clipboard between Macs", isOn: $state.config.flow.clipboard)
+                WireCard(title: "OPTIONS", jp: "設定", fig: "FIG. 3-3", p: p) {
+                    WireCheck(label: "ONLY SWITCH WHILE HOLDING CONTROL", on: state.config.flow.requireControl, p: p) {
+                        state.config.flow.requireControl.toggle()
+                    }
+                    WireCheck(label: "MX KEYS SWITCHES WITH THE MOUSE", on: state.config.flow.keyboardFollows, p: p) {
+                        state.config.flow.keyboardFollows.toggle()
+                    }
+                    WireCheck(label: "SHARE CLIPBOARD", on: state.config.flow.clipboard, p: p) {
+                        state.config.flow.clipboard.toggle()
+                    }
+                }
             }
-
-            Section("Easy-Switch channels") {
-                LabeledContent("This Mac", value: channels(state.mouse?.host, state.keyboard?.host))
-                LabeledContent(state.config.flow.peerName ?? "Other Mac",
-                               value: channels(state.config.flow.peerMouseHost, state.config.flow.peerKeyboardHost))
-                Text("Pair the mouse and keyboard with each Mac on a different channel (the buttons on the devices). Flow learns the other Mac's channel the first time the mouse is used there while both Macs are running Logi Lite.")
-                    .font(.caption).foregroundStyle(.secondary)
+            WireCard(title: "EASY-SWITCH CHANNELS", jp: "チャンネル", fig: "FIG. 3-4", p: p) {
+                channelRow("THIS MAC", state.mouse?.host, state.keyboard?.host)
+                channelRow((state.config.flow.peerName ?? "OTHER MAC").uppercased(),
+                           state.config.flow.peerMouseHost, state.config.flow.peerKeyboardHost)
+                Text("PAIR EACH DEVICE WITH EACH MAC ON A DIFFERENT CHANNEL. FLOW LEARNS THE OTHER MAC'S CHANNEL THE FIRST TIME THE MOUSE IS USED THERE.")
+                    .font(WireFont.label(8)).foregroundStyle(p.faint).fixedSize(horizontal: false, vertical: true)
             }
         }
-        .formStyle(.grouped)
     }
 
-    private func channels(_ mouse: Int?, _ keyboard: Int?) -> String {
-        func s(_ v: Int?) -> String { v.map { "\($0 + 1)" } ?? "?" }
-        return "mouse \(s(mouse)), keyboard \(s(keyboard))"
+    private func channelRow(_ name: String, _ mouse: Int?, _ keyboard: Int?) -> some View {
+        func s(_ v: Int?) -> String { v.map { "CH \($0 + 1)" } ?? "CH ?" }
+        return HStack {
+            Text(name).font(WireFont.label(9, .bold)).foregroundStyle(p.ink).frame(width: 160, alignment: .leading)
+            Text("MOUSE \(s(mouse))").font(WireFont.label(9)).foregroundStyle(p.ink).frame(width: 110, alignment: .leading)
+            Text("KEYS \(s(keyboard))").font(WireFont.label(9)).foregroundStyle(p.ink)
+            Spacer()
+        }
     }
 }
 
-// MARK: - General
+/// "THIS" monitor in the middle with four slots around it; the chosen slot is the other Mac.
+struct FlowEdgePicker: View {
+    @Binding var edge: FlowEdge
+    let enabled: Bool
+    let peer: String?
+    let p: WirePalette
 
-struct GeneralTab: View {
+    var body: some View {
+        GeometryReader { g in
+            let c = CGPoint(x: g.size.width / 2, y: g.size.height / 2)
+            let mw: CGFloat = 84, mh: CGFloat = 52, gap: CGFloat = 12
+            ZStack {
+                monitor("THIS", solid: true, highlighted: false).position(c)
+                ForEach(FlowEdge.allCases) { e in
+                    let off: CGPoint = {
+                        switch e {
+                        case .left: return CGPoint(x: -(mw + gap), y: 0)
+                        case .right: return CGPoint(x: mw + gap, y: 0)
+                        case .top: return CGPoint(x: 0, y: -(mh + gap + 6))
+                        case .bottom: return CGPoint(x: 0, y: mh + gap + 6)
+                        }
+                    }()
+                    Button { edge = e } label: {
+                        monitor(e == edge ? (peer ?? "OTHER").uppercased() : "", solid: e == edge && enabled, highlighted: e == edge)
+                    }
+                    .buttonStyle(.plain)
+                    .position(x: c.x + off.x, y: c.y + off.y)
+                    .accessibilityLabel("Other Mac \(e.title)")
+                    .accessibilityAddTraits(e == edge ? .isSelected : [])
+                }
+            }
+        }
+    }
+
+    private func monitor(_ label: String, solid: Bool, highlighted: Bool) -> some View {
+        VStack(spacing: 2) {
+            ZStack {
+                Rectangle().strokeBorder(highlighted || solid ? p.ink : p.hairline,
+                                         style: StrokeStyle(lineWidth: 1, dash: solid ? [] : [3, 2]))
+                Rectangle().strokeBorder(p.hairline, lineWidth: 0.8).padding(4)
+                Text(label).font(WireFont.label(8, .bold)).foregroundStyle(p.ink).lineLimit(1).padding(.horizontal, 6)
+            }
+            .frame(width: 84, height: 52)
+            Rectangle().fill(highlighted || solid ? p.ink : p.hairline).frame(width: 22, height: 1)
+        }
+        .contentShape(Rectangle())
+    }
+}
+
+// MARK: - DEVICE tab
+
+struct DeviceTab: View {
     @ObservedObject var state: AppState
+    let p: WirePalette
     @State private var loginEnabled = SMAppService.mainApp.status == .enabled
     @State private var loginError: String?
 
     var body: some View {
-        Form {
-            Section("Devices") {
-                device(state.mouse, placeholder: "MX Master 2S not connected")
-                device(state.keyboard, placeholder: "Keyboard not connected")
+        VStack(alignment: .leading, spacing: 16) {
+            WireCard(title: "UNITS", jp: "装置", fig: "FIG. 4-1", p: p) {
+                unit("MOUSE", state.mouse, placeholder: "MX MASTER 2S NOT CONNECTED")
+                Rectangle().fill(p.hairline).frame(height: 1)
+                unit("KEYS", state.keyboard, placeholder: "KEYBOARD NOT CONNECTED")
             }
-            Section("Permissions") {
-                permission("Accessibility (send shortcuts, scroll changes, Flow)", granted: state.accessibilityGranted,
-                           url: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
-                permission("Input Monitoring (talk to the mouse)", granted: state.inputMonitoringGranted,
-                           url: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")
+            WireCard(title: "PERMISSIONS", jp: "権限", fig: "FIG. 4-2", p: p) {
+                permission("ACCESSIBILITY — SEND SHORTCUTS, REMAP BUTTONS, FLOW", granted: state.accessibilityGranted,
+                           anchor: "Privacy_Accessibility")
+                permission("INPUT MONITORING — TALK TO THE MOUSE", granted: state.inputMonitoringGranted,
+                           anchor: "Privacy_ListenEvent")
                 if !state.inputMonitoringGranted {
-                    Button("Relaunch Logi Lite after granting") { AppDelegate.relaunch() }
+                    WireMiniButton(title: "RELAUNCH AFTER GRANTING", p: p) { AppDelegate.relaunch() }
                 }
             }
-            Section("Startup") {
-                Toggle("Open Logi Lite at login", isOn: Binding(get: { loginEnabled }, set: { on in
-                    do {
-                        if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
-                        loginError = nil
-                    } catch { loginError = error.localizedDescription }
-                    loginEnabled = SMAppService.mainApp.status == .enabled
-                }))
-                if let e = loginError { Text(e).font(.caption).foregroundStyle(.red) }
+            HStack(alignment: .top, spacing: 16) {
+                WireCard(title: "STARTUP", jp: "起動", fig: "FIG. 4-3", p: p) {
+                    WireCheck(label: "OPEN LOGI LITE AT LOGIN", on: loginEnabled, p: p) {
+                        do {
+                            if loginEnabled { try SMAppService.mainApp.unregister() } else { try SMAppService.mainApp.register() }
+                            loginError = nil
+                        } catch { loginError = error.localizedDescription }
+                        loginEnabled = SMAppService.mainApp.status == .enabled
+                    }
+                    if let e = loginError { Text(e.uppercased()).font(WireFont.label(8)).foregroundStyle(p.ink) }
+                }
+                WireCard(title: "DATA", jp: "データ", fig: "FIG. 4-4", p: p) {
+                    Text(ConfigStore.file.path).font(WireFont.label(8)).foregroundStyle(p.faint).textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                    WireMiniButton(title: "RESET TO IMPORTED LOGI OPTIONS SETUP", p: p) { state.config = Config.initial() }
+                }
             }
             if state.logiOptionsRunning {
-                Section("Logi Options") {
-                    Text("Logi Options is still running. It fights Logi Lite for the mouse buttons. Quit or uninstall it.")
-                    Button("Quit Logi Options now") { AppDelegate.quitLogiOptions() }
+                WireCard(title: "LOGI OPTIONS DETECTED", jp: "競合", p: p) {
+                    Text("IT COMPETES WITH LOGI LITE FOR THE MOUSE BUTTONS. QUIT OR UNINSTALL IT.")
+                        .font(WireFont.label(9)).foregroundStyle(p.ink)
+                    WireMiniButton(title: "STOP LOGI OPTIONS NOW", p: p) { AppDelegate.quitLogiOptions() }
                 }
             }
-            Section("Settings file") {
-                Text(ConfigStore.file.path).font(.caption).textSelection(.enabled)
-                Button("Reset to the imported Logi Options setup") { state.config = Config.initial() }
-            }
         }
-        .formStyle(.grouped)
     }
 
-    @ViewBuilder private func device(_ d: DeviceSnapshot?, placeholder: String) -> some View {
+    @ViewBuilder private func unit(_ label: String, _ d: DeviceSnapshot?, placeholder: String) -> some View {
         if let d {
-            LabeledContent(d.name, value: d.battery.map { "\($0)%" + (d.charging ? " (charging)" : "") } ?? "battery unknown")
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text(d.name.uppercased()).font(WireFont.label(11, .bold)).foregroundStyle(p.ink)
+                    Spacer()
+                    Text(d.host.map { "CHANNEL \($0 + 1) OF \(d.hostCount ?? 3)" } ?? "CHANNEL ?")
+                        .font(WireFont.label(8)).foregroundStyle(p.faint)
+                }
+                CellGauge(label: label, device: d, p: p, cells: 20)
+            }
         } else {
-            Text(placeholder).foregroundStyle(.secondary)
+            Text(placeholder).font(WireFont.label(9, .bold)).foregroundStyle(p.faint)
         }
     }
 
-    @ViewBuilder private func permission(_ title: String, granted: Bool, url: String) -> some View {
-        HStack {
-            Image(systemName: granted ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                .foregroundStyle(granted ? .green : .orange)
-            Text(title)
+    private func permission(_ title: String, granted: Bool, anchor: String) -> some View {
+        HStack(spacing: 8) {
+            Text(granted ? "✓" : "!").font(WireFont.label(9, .bold)).foregroundStyle(granted ? p.paper : p.ink)
+                .frame(width: 15, height: 15)
+                .background(granted ? p.ink : .clear)
+                .overlay(Rectangle().strokeBorder(p.ink, lineWidth: 1))
+            Text(title).font(WireFont.label(9)).foregroundStyle(p.ink)
             Spacer()
-            if !granted { Button("Open Settings") { NSWorkspace.shared.open(URL(string: url)!) } }
+            if !granted {
+                WireMiniButton(title: "OPEN SETTINGS", p: p) {
+                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?\(anchor)")!)
+                }
+            }
         }
     }
 }

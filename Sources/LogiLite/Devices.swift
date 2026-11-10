@@ -1,12 +1,28 @@
 import Foundation
 import IOKit.hid
 
+/// What the device says about its power source.
+enum ChargeState: String, Equatable {
+    case discharging, charging, slowCharging, full, error
+
+    var onPower: Bool { self != .discharging }
+    var label: String {
+        switch self {
+        case .discharging: return "ON BATTERY"
+        case .charging: return "CHARGING"
+        case .slowCharging: return "SLOW CHARGE"
+        case .full: return "FULL"
+        case .error: return "CHARGE ERROR"
+        }
+    }
+}
+
 /// Shared behaviour for a Logitech device: battery and Easy-Switch host.
 class LogiDevice {
     let hid: HIDPPDevice
     var name: String { hid.name }
     private(set) var battery: Int?
-    private(set) var charging = false
+    private(set) var chargeState = ChargeState.discharging
     private(set) var hostIndex: Int?
     private(set) var hostCount: Int?
     var onChange: (() -> Void)?
@@ -57,17 +73,34 @@ class LogiDevice {
         }
     }
 
+    /// Feature 0x1000: [level %, next level %, status]. While on power the level is reported as 0 ("not
+    /// measured"), so keep the last real reading instead of showing 0%.
     private func parseLegacy(_ r: [UInt8]) {
         guard r.count >= 3 else { return }
-        battery = Int(r[0])
-        charging = (1...3).contains(r[2])
+        switch r[2] {
+        case 0: chargeState = .discharging
+        case 1, 2: chargeState = .charging          // recharging / final stage
+        case 3: chargeState = .full
+        case 4: chargeState = .slowCharging
+        default: chargeState = .error               // invalid battery, thermal, other
+        }
+        let level = Int(r[0])
+        if level > 0 || chargeState == .discharging { battery = level }
+        else if chargeState == .full { battery = 100 }
         onChange?()
     }
 
+    /// Feature 0x1004: [state of charge %, level flags, charging status, external power].
     private func parseUnified(_ r: [UInt8]) {
         guard r.count >= 3 else { return }
-        battery = Int(r[0])
-        charging = r[2] == 1 || r[2] == 2 || r[2] == 3
+        switch r[2] {
+        case 0: chargeState = .discharging
+        case 1: chargeState = .charging
+        case 2: chargeState = .slowCharging
+        case 3: chargeState = .full
+        default: chargeState = .error
+        }
+        if r[0] > 0 || chargeState == .discharging { battery = Int(r[0]) }
         onChange?()
     }
 }

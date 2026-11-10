@@ -23,7 +23,7 @@ struct WirePalette {
     }
 }
 
-private enum WireFont {
+enum WireFont {
     static func label(_ size: CGFloat = 9, _ weight: Font.Weight = .regular) -> Font {
         .system(size: size, weight: weight, design: .monospaced)
     }
@@ -199,40 +199,62 @@ struct CellGauge: View {
     let label: String
     let device: DeviceSnapshot?
     let p: WirePalette
+    var cells = 12
 
     var body: some View {
         HStack(spacing: 8) {
             Text(label).font(WireFont.label(8, .semibold)).foregroundStyle(p.ink).frame(width: 40, alignment: .leading)
-            Canvas { ctx, size in
-                let cells = 12
-                let gap: CGFloat = 2
-                let w = (size.width - gap * CGFloat(cells - 1)) / CGFloat(cells)
-                let level = device?.battery ?? 0
-                let filled = Int((Double(level) / 100 * Double(cells)).rounded(.up))
-                for i in 0..<cells {
-                    let r = CGRect(x: CGFloat(i) * (w + gap), y: 0, width: w, height: size.height).insetBy(dx: 0.5, dy: 0.5)
-                    let on = device?.battery != nil && i < filled
-                    ctx.stroke(Path(r), with: .color(on ? p.ink : p.hairline), lineWidth: 1)
-                    guard on else { continue }
-                    // Hatch fill, like shaded areas in line art. drawLayer scopes the clip to this cell.
-                    ctx.drawLayer { layer in
-                        layer.clip(to: Path(r))
-                        var hatch = Path()
-                        var x = r.minX - r.height
-                        while x < r.maxX { hatch.move(to: CGPoint(x: x, y: r.maxY)); hatch.addLine(to: CGPoint(x: x + r.height, y: r.minY)); x += 3 }
-                        layer.stroke(hatch, with: .color(p.ink), lineWidth: 0.8)
-                    }
-                }
+            // While charging, one extra cell "fills" in a slow sweep, like a charge indicator.
+            TimelineView(.periodic(from: .now, by: 0.5)) { timeline in
+                let tick = Int(timeline.date.timeIntervalSinceReferenceDate * 2)
+                Canvas { ctx, size in draw(ctx, size, tick: tick) }
             }
             .frame(height: 11)
-            Text(readout).font(WireFont.label(9, .semibold)).foregroundStyle(p.ink).frame(width: 46, alignment: .trailing)
+            VStack(alignment: .trailing, spacing: 0) {
+                Text(readout).font(WireFont.label(9, .semibold)).foregroundStyle(p.ink)
+                if let d = device, d.chargeState != .discharging {
+                    Text(d.chargeState.label).font(WireFont.label(6, .bold)).foregroundStyle(p.faint)
+                }
+            }
+            .frame(width: 58, alignment: .trailing)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(label) battery \(readout) \(device?.chargeState.label.lowercased() ?? "")")
+    }
+
+    private func draw(_ ctx: GraphicsContext, _ size: CGSize, tick: Int) {
+        let gap: CGFloat = 2
+        let w = (size.width - gap * CGFloat(cells - 1)) / CGFloat(cells)
+        let known = device?.battery
+        let filled = known.map { Int((Double($0) / 100 * Double(cells)).rounded(.up)) } ?? 0
+        let charging = device?.chargeState == .charging || device?.chargeState == .slowCharging
+        // Sweep from the current level to the end; with no reading, sweep the whole gauge.
+        let sweepStart = min(filled, cells - 1)
+        let sweep = charging ? sweepStart + tick % max(cells - sweepStart, 1) : -1
+        for i in 0..<cells {
+            let r = CGRect(x: CGFloat(i) * (w + gap), y: 0, width: w, height: size.height).insetBy(dx: 0.5, dy: 0.5)
+            let solid = i < filled
+            let pulsing = charging && i >= sweepStart && i <= sweep
+            ctx.stroke(Path(r), with: .color(solid || pulsing ? p.ink : p.hairline),
+                       style: StrokeStyle(lineWidth: 1, dash: pulsing && !solid ? [2, 1.5] : []))
+            guard solid || pulsing else { continue }
+            ctx.drawLayer { layer in
+                layer.clip(to: Path(r))
+                var hatch = Path()
+                var x = r.minX - r.height
+                while x < r.maxX { hatch.move(to: CGPoint(x: x, y: r.maxY)); hatch.addLine(to: CGPoint(x: x + r.height, y: r.minY)); x += 3 }
+                layer.stroke(hatch, with: .color(solid ? p.ink : p.faint), lineWidth: 0.8)
+            }
         }
     }
 
     private var readout: String {
         guard let d = device else { return "— —" }
-        guard let b = d.battery else { return "???" }
-        return "\(b)%" + (d.charging ? "⚡︎" : "")
+        if d.chargeState == .full { return "100% ⚡︎" }
+        if d.chargeState == .error { return "ERR" }
+        let level = d.battery.map { "\($0)%" }
+        if d.charging { return (level ?? "") + "⚡︎" }
+        return level ?? "???"
     }
 }
 
@@ -397,9 +419,10 @@ struct MouseSchematic: View {
     let callouts: [Callout]
     let connected: Bool
     let p: WirePalette
+    var selected: Int? = nil
 
     /// Anchor points in the mouse's 120×180 drawing space.
-    private static let anchors: [Part: CGPoint] = [
+    static let anchors: [Part: CGPoint] = [
         .wheel: CGPoint(x: 60, y: 30), .wheelMode: CGPoint(x: 60, y: 58), .thumbWheel: CGPoint(x: 13, y: 88),
         .forward: CGPoint(x: 21, y: 110), .back: CGPoint(x: 23, y: 124), .gesture: CGPoint(x: 22, y: 140),
     ]
@@ -484,11 +507,15 @@ struct MouseSchematic: View {
                 ctx.stroke(leader, with: .color(p.ink.opacity(connected ? 0.8 : 0.3)), lineWidth: 0.7)
                 ctx.fill(Path(ellipseIn: CGRect(x: anchor.x - 1.8, y: anchor.y - 1.8, width: 3.6, height: 3.6)), with: ink)
 
-                // Numbered box.
+                // Numbered box (inverted when this callout is selected).
                 let box = CGRect(x: labelX, y: ly - 6, width: 12, height: 12)
-                ctx.stroke(Path(box), with: ink, lineWidth: 0.9)
-                ctx.draw(Text("\(c.index)").font(WireFont.label(8, .bold)).foregroundColor(p.ink),
+                let isSelected = c.index == selected
+                if isSelected { ctx.fill(Path(box), with: ink) } else { ctx.stroke(Path(box), with: ink, lineWidth: 0.9) }
+                ctx.draw(Text("\(c.index)").font(WireFont.label(8, .bold)).foregroundColor(isSelected ? p.paper : p.ink),
                          at: CGPoint(x: box.midX, y: box.midY))
+                if isSelected {
+                    ctx.stroke(Path(ellipseIn: CGRect(x: anchor.x - 5, y: anchor.y - 5, width: 10, height: 10)), with: ink, lineWidth: 1)
+                }
                 ctx.draw(Text(c.title).font(WireFont.label(7)).foregroundColor(p.faint),
                          at: CGPoint(x: labelX + 17, y: ly - 5), anchor: .leading)
                 ctx.draw(Text(c.value).font(WireFont.label(9, .semibold)).foregroundColor(p.ink),

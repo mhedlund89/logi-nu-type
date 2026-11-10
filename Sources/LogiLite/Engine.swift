@@ -3,9 +3,10 @@ import Combine
 import CoreGraphics
 
 struct DeviceSnapshot: Equatable {
+    var charging: Bool { chargeState.onPower }
     var name: String
     var battery: Int?
-    var charging: Bool
+    var chargeState: ChargeState
     var host: Int?
     var hostCount: Int?
 }
@@ -139,7 +140,7 @@ final class Engine {
         startTapWhenPermitted()
 
         // Battery changes are pushed by the device, but poll occasionally as a fallback.
-        Timer.scheduledTimer(withTimeInterval: 600, repeats: true) { [weak self] _ in
+        Timer.scheduledTimer(withTimeInterval: 120, repeats: true) { [weak self] _ in
             self?.devices.mouse?.refreshBattery()
             self?.devices.keyboard?.refreshBattery()
         }
@@ -158,7 +159,7 @@ final class Engine {
 
     private func publishDevices() {
         func snap(_ d: LogiDevice?) -> DeviceSnapshot? {
-            d.map { DeviceSnapshot(name: $0.name, battery: $0.battery, charging: $0.charging, host: $0.hostIndex, hostCount: $0.hostCount) }
+            d.map { DeviceSnapshot(name: $0.name, battery: $0.battery, chargeState: $0.chargeState, host: $0.hostIndex, hostCount: $0.hostCount) }
         }
         state.mouse = snap(devices.mouse)
         state.keyboard = snap(devices.keyboard)

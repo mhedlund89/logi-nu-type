@@ -95,10 +95,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         img?.isTemplate = true
         button.image = img
         button.imagePosition = .imageLeading
-        if let m = state.mouse, let level = m.battery {
-            let low = level <= 15 && !m.charging
-            button.title = (low ? " ⚠︎ " : " ") + "\(level)%"
-            button.toolTip = "\(m.name): \(level)%\(m.charging ? " (charging)" : "")"
+        if let m = state.mouse, m.charging || m.battery != nil {
+            let level = m.battery.map { "\($0)%" } ?? ""
+            let low = (m.battery ?? 100) <= 15 && !m.charging
+            button.title = m.charging ? " ⚡︎\(m.chargeState == .full ? "FULL" : level)" : (low ? " ⚠︎ " : " ") + level
+            button.toolTip = "\(m.name): \(m.chargeState.label.capitalized)\(level.isEmpty ? "" : ", \(level)")"
         } else {
             button.title = state.mouse == nil ? " –" : ""
             button.toolTip = state.mouse == nil ? "Mouse not connected" : "Logi Lite"
@@ -118,9 +119,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if settingsWindow == nil {
             let w = NSWindow(contentViewController: NSHostingController(rootView: SettingsView(state: state, engine: engine)))
             w.title = "Logi Lite"
-            w.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+            w.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+            w.titlebarAppearsTransparent = true
+            w.titleVisibility = .hidden
+            w.isMovableByWindowBackground = true
             w.isReleasedWhenClosed = false
-            w.setContentSize(NSSize(width: 760, height: 640))
+            w.setContentSize(NSSize(width: 980, height: 760))
             w.center()
             settingsWindow = w
         }
@@ -134,16 +138,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 if let i = CommandLine.arguments.firstIndex(of: "--render-panel"), CommandLine.arguments.count > i + 1 {
     let out = URL(fileURLWithPath: CommandLine.arguments[i + 1])
     let state = AppState()
-    state.mouse = DeviceSnapshot(name: "MX Master 2S", battery: 90, charging: false, host: 0, hostCount: 3)
-    state.keyboard = DeviceSnapshot(name: "MX Keys Mac", battery: 55, charging: true, host: 0, hostCount: 3)
+    state.mouse = DeviceSnapshot(name: "MX Master 2S", battery: 90, chargeState: .discharging, host: 0, hostCount: 3)
+    state.keyboard = DeviceSnapshot(name: "MX Keys Mac", battery: 55, chargeState: .charging, host: 0, hostCount: 3)
     state.freeSpin = false
     state.frontBundleID = "com.google.Chrome"
     state.accessibilityGranted = true
     state.inputMonitoringGranted = true
     state.logiOptionsRunning = true
     state.flowStatus = "Looking for your other Mac…"
-    let view = MenuPanel(state: state, engine: Engine(state: state), openSettings: {}, quitLogiOptions: {}, openPrivacy: { _ in })
-        .environment(\.colorScheme, CommandLine.arguments.contains("dark") ? .dark : .light)
+    let scheme: ColorScheme = CommandLine.arguments.contains("dark") ? .dark : .light
+    let tabArg = CommandLine.arguments.first { $0.hasPrefix("settings=") }.map { String($0.dropFirst(9)) }
+    let view: AnyView
+    if let tabArg, let tab = SettingsView.SettingsTab.allCases.first(where: { "\($0)" == tabArg }) {
+        view = AnyView(SettingsView(state: state, engine: Engine(state: state), initialTab: tab, scrolls: false)
+            .frame(width: 980, height: 820).environment(\.colorScheme, scheme))
+    } else {
+        view = AnyView(MenuPanel(state: state, engine: Engine(state: state), openSettings: {}, quitLogiOptions: {}, openPrivacy: { _ in })
+            .environment(\.colorScheme, scheme))
+    }
     MainActor.assumeIsolated {
         let renderer = ImageRenderer(content: view)
         renderer.scale = 2
