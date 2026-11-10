@@ -11,6 +11,21 @@ struct DeviceSnapshot: Equatable {
     var hostCount: Int?
 }
 
+/// Window appearance chosen by the user (saved in UserDefaults).
+enum Appearance: String, CaseIterable, Identifiable {
+    case system, light, dark
+    var id: String { rawValue }
+    var title: String { rawValue.uppercased() }
+    var nsAppearance: NSAppearance? {
+        switch self {
+        case .system: return nil
+        case .light: return NSAppearance(named: .aqua)
+        case .dark: return NSAppearance(named: .darkAqua)
+        }
+    }
+    var next: Appearance { Appearance.allCases[(Appearance.allCases.firstIndex(of: self)! + 1) % Appearance.allCases.count] }
+}
+
 /// Observable state shared by the menu and the settings window.
 final class AppState: ObservableObject {
     @Published var config: Config {
@@ -29,6 +44,12 @@ final class AppState: ObservableObject {
     @Published var accessibilityGranted = false
     @Published var inputMonitoringGranted = false
     @Published var logiOptionsRunning = false
+    @Published var appearance: Appearance = Appearance(rawValue: UserDefaults.standard.string(forKey: "appearance") ?? "") ?? .system {
+        didSet {
+            UserDefaults.standard.set(appearance.rawValue, forKey: "appearance")
+            NSApp?.appearance = appearance.nsAppearance
+        }
+    }
 
     var onConfigChanged: ((Config, Config) -> Void)?
 

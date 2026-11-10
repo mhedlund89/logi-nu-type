@@ -79,7 +79,7 @@ struct MenuPanel: View {
             }
             WireSection(title: "CONTROL LAYOUT", jp: "操作系", trailing: profileName.uppercased(), p: p) {
                 MouseSchematic(callouts: callouts, connected: state.mouse != nil, p: p)
-                    .frame(height: 196)
+                    .aspectRatio(MouseSchematic.designSize, contentMode: .fit)
             }
             WireSection(title: "WHEEL", jp: "ホイール", p: p) {
                 HStack(spacing: 10) {
@@ -127,6 +127,9 @@ struct MenuPanel: View {
                 Spacer()
                 Text("Fig. 01 — Control Schematic").font(.system(size: 7, weight: .regular, design: .serif))
                     .italic().foregroundStyle(p.faint)
+                headerButton("◐", help: "Display: \(state.appearance.title.lowercased()) (click to change)") {
+                    state.appearance = state.appearance.next
+                }
                 headerButton("⤢", help: "Open full settings", action: openSettings)
                 if let onClose { headerButton("×", help: "Close", action: onClose) }
             }
@@ -446,126 +449,6 @@ struct FlowDiagram: View {
             ctx.draw(Text("THIS").font(WireFont.label(6)).foregroundColor(p.faint), at: CGPoint(x: thisRect.midX, y: size.height - 3))
             ctx.draw(Text((peer ?? "OTHER").uppercased().prefix(10)).font(WireFont.label(6)).foregroundColor(p.faint),
                      at: CGPoint(x: otherRect.midX, y: size.height - 3))
-        }
-    }
-}
-
-// MARK: - Mouse schematic
-
-struct MouseSchematic: View {
-    enum Part { case wheel, wheelMode, thumbWheel, forward, back, gesture }
-    struct Callout { let index: Int; let part: Part; let title: String; let value: String }
-
-    let callouts: [Callout]
-    let connected: Bool
-    let p: WirePalette
-    var selected: Int? = nil
-
-    /// Anchor points in the mouse's 120×180 drawing space.
-    static let anchors: [Part: CGPoint] = [
-        .wheel: CGPoint(x: 60, y: 30), .wheelMode: CGPoint(x: 60, y: 58), .thumbWheel: CGPoint(x: 13, y: 88),
-        .forward: CGPoint(x: 21, y: 110), .back: CGPoint(x: 23, y: 124), .gesture: CGPoint(x: 22, y: 140),
-    ]
-
-    var body: some View {
-        Canvas { ctx, size in
-            let origin = CGPoint(x: 18, y: 8)
-            func m(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: origin.x + x, y: origin.y + y) }
-            let ink = GraphicsContext.Shading.color(p.ink)
-            let faint = GraphicsContext.Shading.color(p.hairline)
-
-            // Centre line and dimension marks.
-            var centre = Path()
-            centre.move(to: m(60, -6)); centre.addLine(to: m(60, 186))
-            ctx.stroke(centre, with: faint, style: StrokeStyle(lineWidth: 0.7, dash: [6, 2, 1, 2]))
-            var dim = Path()
-            dim.move(to: m(4, 184)); dim.addLine(to: m(116, 184))
-            dim.move(to: m(4, 180)); dim.addLine(to: m(4, 188))
-            dim.move(to: m(116, 180)); dim.addLine(to: m(116, 188))
-            ctx.stroke(dim, with: faint, lineWidth: 0.7)
-
-            // Body.
-            var body = Path()
-            body.move(to: m(60, 2))
-            body.addCurve(to: m(108, 40), control1: m(88, 2), control2: m(106, 18))
-            body.addCurve(to: m(110, 120), control1: m(112, 70), control2: m(114, 96))
-            body.addCurve(to: m(72, 178), control1: m(106, 150), control2: m(92, 176))
-            body.addCurve(to: m(34, 170), control1: m(56, 180), control2: m(42, 178))
-            body.addCurve(to: m(6, 128), control1: m(22, 160), control2: m(4, 146))
-            body.addCurve(to: m(18, 68), control1: m(8, 108), control2: m(4, 88))
-            body.addCurve(to: m(60, 2), control1: m(28, 40), control2: m(34, 4))
-            body.closeSubpath()
-            ctx.stroke(body, with: ink, lineWidth: 1.3)
-            // Inner shell line (secondary contour).
-            ctx.stroke(body.applying(CGAffineTransform(translationX: origin.x + 60, y: origin.y + 92).scaledBy(x: 0.9, y: 0.92)
-                .translatedBy(x: -origin.x - 60, y: -origin.y - 92)), with: faint, lineWidth: 0.8)
-
-            // Button split and front shell.
-            var buttons = Path()
-            buttons.move(to: m(60, 3)); buttons.addLine(to: m(60, 66))
-            buttons.move(to: m(20, 64)); buttons.addQuadCurve(to: m(106, 62), control: m(62, 74))
-            ctx.stroke(buttons, with: ink, lineWidth: 1)
-
-            // Main wheel with ratchet ribs.
-            let wheel = CGRect(x: origin.x + 53, y: origin.y + 14, width: 14, height: 34)
-            ctx.stroke(Path(roundedRect: wheel, cornerRadius: 6), with: ink, lineWidth: 1.1)
-            var ribs = Path()
-            var y = wheel.minY + 5
-            while y < wheel.maxY - 4 { ribs.move(to: CGPoint(x: wheel.minX + 3, y: y)); ribs.addLine(to: CGPoint(x: wheel.maxX - 3, y: y)); y += 3.5 }
-            ctx.stroke(ribs, with: ink, lineWidth: 0.6)
-
-            // Wheel-mode button.
-            ctx.stroke(Path(roundedRect: CGRect(x: origin.x + 55, y: origin.y + 54, width: 10, height: 8), cornerRadius: 2), with: ink, lineWidth: 1)
-
-            // Thumb wheel.
-            let tw = CGRect(x: origin.x + 9, y: origin.y + 76, width: 8, height: 26)
-            ctx.stroke(Path(roundedRect: tw, cornerRadius: 3), with: ink, lineWidth: 1)
-            var twr = Path()
-            y = tw.minY + 4
-            while y < tw.maxY - 3 { twr.move(to: CGPoint(x: tw.minX + 2, y: y)); twr.addLine(to: CGPoint(x: tw.maxX - 2, y: y)); y += 3 }
-            ctx.stroke(twr, with: ink, lineWidth: 0.5)
-
-            // Forward / back buttons.
-            ctx.stroke(Path(roundedRect: CGRect(x: origin.x + 15, y: origin.y + 104, width: 12, height: 11), cornerRadius: 2), with: ink, lineWidth: 1)
-            ctx.stroke(Path(roundedRect: CGRect(x: origin.x + 17, y: origin.y + 118, width: 12, height: 11), cornerRadius: 2), with: ink, lineWidth: 1)
-
-            // Gesture button (thumb rest pad).
-            ctx.stroke(Path(ellipseIn: CGRect(x: origin.x + 11, y: origin.y + 135, width: 22, height: 10)), with: ink, lineWidth: 1)
-
-            // Callouts: leader from part → elbow → label column.
-            let labelX: CGFloat = 168
-            let rows = callouts.count
-            let rowH = (size.height - 8) / CGFloat(max(rows, 1))
-            for (i, c) in callouts.enumerated() {
-                guard let a = Self.anchors[c.part] else { continue }
-                let anchor = m(a.x, a.y)
-                let ly = 4 + rowH * (CGFloat(i) + 0.5)
-                var leader = Path()
-                leader.move(to: anchor)
-                leader.addLine(to: CGPoint(x: labelX - 18, y: ly))
-                leader.addLine(to: CGPoint(x: labelX - 4, y: ly))
-                ctx.stroke(leader, with: .color(p.ink.opacity(connected ? 0.8 : 0.3)), lineWidth: 0.7)
-                ctx.fill(Path(ellipseIn: CGRect(x: anchor.x - 1.8, y: anchor.y - 1.8, width: 3.6, height: 3.6)), with: ink)
-
-                // Numbered box (inverted when this callout is selected).
-                let box = CGRect(x: labelX, y: ly - 6, width: 12, height: 12)
-                let isSelected = c.index == selected
-                if isSelected { ctx.fill(Path(box), with: ink) } else { ctx.stroke(Path(box), with: ink, lineWidth: 0.9) }
-                ctx.draw(Text("\(c.index)").font(WireFont.label(8, .bold)).foregroundColor(isSelected ? p.paper : p.ink),
-                         at: CGPoint(x: box.midX, y: box.midY))
-                if isSelected {
-                    ctx.stroke(Path(ellipseIn: CGRect(x: anchor.x - 5, y: anchor.y - 5, width: 10, height: 10)), with: ink, lineWidth: 1)
-                }
-                ctx.draw(Text(c.title).font(WireFont.label(7)).foregroundColor(p.faint),
-                         at: CGPoint(x: labelX + 17, y: ly - 5), anchor: .leading)
-                ctx.draw(Text(c.value).font(WireFont.label(9, .semibold)).foregroundColor(p.ink),
-                         at: CGPoint(x: labelX + 17, y: ly + 5), anchor: .leading)
-            }
-
-            if !connected {
-                ctx.draw(Text("— UNIT NOT CONNECTED —").font(WireFont.label(8, .bold)).foregroundColor(p.faint),
-                         at: m(60, 196))
-            }
         }
     }
 }

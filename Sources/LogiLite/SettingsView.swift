@@ -67,9 +67,16 @@ struct SettingsView: View {
                         .font(WireFont.label(9)).foregroundStyle(p.faint)
                 }
                 Spacer()
-                VStack(spacing: 4) {
+                VStack(alignment: .trailing, spacing: 4) {
                     CellGauge(label: "MOUSE", device: state.mouse, p: p, cells: 10).frame(width: 230)
                     CellGauge(label: "KEYS", device: state.keyboard, p: p, cells: 10).frame(width: 230)
+                    HStack(spacing: 8) {
+                        Text("DISPLAY").font(WireFont.label(8, .semibold)).foregroundStyle(p.faint)
+                        SegmentSwitch(options: Appearance.allCases.map(\.title),
+                                      selected: Appearance.allCases.firstIndex(of: state.appearance),
+                                      enabled: true, p: p) { state.appearance = Appearance.allCases[$0] }
+                    }
+                    .padding(.top, 4)
                 }
             }
             HStack(spacing: 0) {
@@ -387,34 +394,33 @@ struct MouseTab: View {
     }
 }
 
-/// The mouse drawing at 1.5×, with invisible hit targets over each callout row and each part.
+/// The mouse drawing rendered natively at 1.5× (sharp), with invisible hit targets over each callout row and part.
 struct InteractiveSchematic: View {
     let callouts: [MouseSchematic.Callout]
     let connected: Bool
     let p: WirePalette
     @Binding var selected: MouseSchematic.Part
-
-    private static let design = CGSize(width: 340, height: 196)
-    private static let origin = CGPoint(x: 18, y: 8)   // must match MouseSchematic's drawing origin
-    private let scale: CGFloat = 1.5
+    var width: CGFloat = 540
 
     var body: some View {
-        let rowH = (Self.design.height - 8) / CGFloat(max(callouts.count, 1))
+        let s = width / MouseSchematic.designSize.width
+        let size = CGSize(width: width, height: MouseSchematic.designSize.height * s)
+        let rowH = MouseSchematic.rowHeight(of: callouts.count) * s
+        let labelX = MouseSchematic.labelX * s
         ZStack(alignment: .topLeading) {
             MouseSchematic(callouts: callouts, connected: connected, p: p,
                            selected: callouts.first { $0.part == selected }?.index)
-                .frame(width: Self.design.width, height: Self.design.height)
+                .frame(width: size.width, height: size.height)
             ForEach(Array(callouts.enumerated()), id: \.offset) { i, c in
-                hit(c).frame(width: Self.design.width - 166, height: rowH)
-                    .position(x: 166 + (Self.design.width - 166) / 2, y: 4 + rowH * (CGFloat(i) + 0.5))
+                hit(c).frame(width: size.width - labelX + 4, height: rowH)
+                    .position(x: labelX - 4 + (size.width - labelX + 4) / 2, y: MouseSchematic.rowY(i, of: callouts.count) * s)
                 if let a = MouseSchematic.anchors[c.part] {
-                    hit(c).frame(width: 16, height: 16).position(x: Self.origin.x + a.x, y: Self.origin.y + a.y)
+                    hit(c).frame(width: 14 * s, height: 14 * s)
+                        .position(x: (MouseSchematic.origin.x + a.x) * s, y: (MouseSchematic.origin.y + a.y) * s)
                 }
             }
         }
-        .frame(width: Self.design.width, height: Self.design.height, alignment: .topLeading)
-        .scaleEffect(scale, anchor: .topLeading)
-        .frame(width: Self.design.width * scale, height: Self.design.height * scale, alignment: .topLeading)
+        .frame(width: size.width, height: size.height, alignment: .topLeading)
     }
 
     private func hit(_ c: MouseSchematic.Callout) -> some View {
