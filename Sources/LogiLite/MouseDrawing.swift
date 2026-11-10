@@ -469,15 +469,15 @@ struct MouseSchematic: View {
             } else {
                 ctx.stroke(Path(box), with: ink, lineWidth: 0.9)
             }
-            ctx.draw(Text("\(c.index)").font(WireFont.label(8, .bold)).foregroundColor(isSelected ? p.paper : p.ink),
+            ctx.draw(Text("\(c.index)").font(WireFont.fixed(8, .bold)).foregroundColor(isSelected ? p.paper : p.ink),
                      at: CGPoint(x: box.midX, y: box.midY))
-            ctx.draw(Text(c.title).font(WireFont.label(7)).foregroundColor(p.faint),
+            ctx.draw(Text(c.title).font(WireFont.fixed(7)).foregroundColor(p.faint),
                      at: CGPoint(x: box.maxX + 5, y: box.midY - 5), anchor: .leading)
-            ctx.draw(Text(c.value).font(WireFont.label(layout == .side ? 9 : 7.5, .semibold)).foregroundColor(p.ink),
+            ctx.draw(Text(c.value).font(WireFont.fixed(layout == .side ? 9 : 7.5, .semibold)).foregroundColor(p.ink),
                      at: CGPoint(x: box.maxX + 5, y: box.midY + 5), anchor: .leading)
         }
         if !connected {
-            ctx.draw(Text("— UNIT NOT CONNECTED —").font(WireFont.label(8, .bold)).foregroundColor(p.faint),
+            ctx.draw(Text("— UNIT NOT CONNECTED —").font(WireFont.fixed(8, .bold)).foregroundColor(p.faint),
                      at: pt(150, 200))
         }
     }

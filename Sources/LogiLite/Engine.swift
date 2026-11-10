@@ -44,6 +44,16 @@ final class AppState: ObservableObject {
     @Published var accessibilityGranted = false
     @Published var inputMonitoringGranted = false
     @Published var logiOptionsRunning = false
+    static let textScales: [(String, Double)] = [("S", 1.0), ("M", 1.25), ("L", 1.5)]
+    @Published var textScale: Double = {
+        let v = UserDefaults.standard.double(forKey: "textScale")
+        return v > 0 ? v : 1.25
+    }() {
+        didSet {
+            UserDefaults.standard.set(textScale, forKey: "textScale")
+            WireFont.scale = CGFloat(textScale)
+        }
+    }
     @Published var appearance: Appearance = Appearance(rawValue: UserDefaults.standard.string(forKey: "appearance") ?? "") ?? .system {
         didSet {
             UserDefaults.standard.set(appearance.rawValue, forKey: "appearance")
@@ -53,7 +63,10 @@ final class AppState: ObservableObject {
 
     var onConfigChanged: ((Config, Config) -> Void)?
 
-    init() { config = ConfigStore.load() }
+    init() {
+        config = ConfigStore.load()
+        WireFont.scale = CGFloat(textScale)
+    }
 }
 
 /// Global event tap. `listenOnly` taps can observe but never delay or drop events, so pointer movement goes

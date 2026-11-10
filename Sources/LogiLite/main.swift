@@ -129,8 +129,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             w.titleVisibility = .hidden
             w.isMovableByWindowBackground = true
             w.isReleasedWhenClosed = false
-            w.contentMinSize = NSSize(width: 900, height: 660)
-            w.setContentSize(NSSize(width: 980, height: 760))
+            w.contentMinSize = NSSize(width: 1000, height: 700)
+            w.setContentSize(NSSize(width: 1240, height: 860))
             w.center()
             w.setFrameAutosaveName("LogiLiteSettings")   // remembers size and position
             settingsWindow = w
@@ -158,7 +158,7 @@ if let i = CommandLine.arguments.firstIndex(of: "--render-panel"), CommandLine.a
     let view: AnyView
     if let tabArg, let tab = SettingsView.SettingsTab.allCases.first(where: { "\($0)" == tabArg }) {
         view = AnyView(SettingsView(state: state, engine: Engine(state: state), initialTab: tab, scrolls: false)
-            .frame(width: 980, height: 820).environment(\.colorScheme, scheme))
+            .frame(width: 1240, height: 1000).environment(\.colorScheme, scheme))
     } else {
         view = AnyView(MenuPanel(state: state, engine: Engine(state: state), openSettings: {}, quitLogiOptions: {}, openPrivacy: { _ in })
             .environment(\.colorScheme, scheme))

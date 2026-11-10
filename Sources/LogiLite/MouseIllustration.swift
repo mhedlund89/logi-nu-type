@@ -80,7 +80,7 @@ struct MouseIllustration: View {
         let body = ZStack {
             Circle().fill(on ? p.ink : p.paper)
             Circle().strokeBorder(p.ink, lineWidth: 1.4)
-            Text("\(c.index)").font(WireFont.label(size * 0.5, .bold)).foregroundStyle(on ? p.paper : p.ink)
+            Text("\(c.index)").font(WireFont.fixed(size * 0.5, .bold)).foregroundStyle(on ? p.paper : p.ink)
         }
         .frame(width: size, height: size)
         .overlay(Circle().strokeBorder(p.ink, lineWidth: 1).padding(-4).opacity(on ? 1 : 0))

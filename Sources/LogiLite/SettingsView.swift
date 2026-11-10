@@ -39,7 +39,7 @@ struct SettingsView: View {
         }
         .background(p.paper)
         .overlay(CornerMarks(p: p))
-        .frame(minWidth: 900, minHeight: 660)
+        .frame(minWidth: 1000, minHeight: 700)
     }
 
     private func content(_ p: WirePalette) -> some View {
@@ -68,10 +68,14 @@ struct SettingsView: View {
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 4) {
-                    CellGauge(label: "MOUSE", device: state.mouse, p: p, cells: 10).frame(width: 230)
-                    CellGauge(label: "KEYS", device: state.keyboard, p: p, cells: 10).frame(width: 230)
+                    CellGauge(label: "MOUSE", device: state.mouse, p: p, cells: 10).frame(width: WireFont.w(230))
+                    CellGauge(label: "KEYS", device: state.keyboard, p: p, cells: 10).frame(width: WireFont.w(230))
                     HStack(spacing: 8) {
-                        Text("DISPLAY").font(WireFont.label(8, .semibold)).foregroundStyle(p.faint)
+                        Text("TEXT").font(WireFont.label(8, .semibold)).foregroundStyle(p.faint)
+                        SegmentSwitch(options: AppState.textScales.map(\.0),
+                                      selected: AppState.textScales.firstIndex { $0.1 == state.textScale },
+                                      enabled: true, p: p) { state.textScale = AppState.textScales[$0].1 }
+                        Text("DISPLAY").font(WireFont.label(8, .semibold)).foregroundStyle(p.faint).padding(.leading, 6)
                         SegmentSwitch(options: Appearance.allCases.map(\.title),
                                       selected: Appearance.allCases.firstIndex(of: state.appearance),
                                       enabled: true, p: p) { state.appearance = Appearance.allCases[$0] }
@@ -277,14 +281,14 @@ struct MouseTab: View {
                 VStack(alignment: .center, spacing: 8) {
                     MouseIllustration(callouts: callouts, connected: state.mouse != nil, p: p,
                                       selected: callouts.first { $0.part == part }?.index,
-                                      legendColumns: 3, onSelect: { part = $0 })
-                        .frame(width: 560)
+                                      legendColumns: 2, onSelect: { part = $0 })
+                        .frame(minWidth: 380, idealWidth: 600, maxWidth: 660)
                     Text("SELECT A NUMBERED MARKER OR A LEGEND ROW TO ASSIGN IT")
                         .font(WireFont.label(8)).foregroundStyle(p.faint)
                 }
                 .padding(.top, 18)
                 .frame(maxWidth: .infinity)
-                inspector.frame(minWidth: 300, maxWidth: .infinity)
+                inspector.frame(minWidth: WireFont.w(300), maxWidth: .infinity)
             }
         }
         .onChange(of: part) { _, _ in direction = .click }
@@ -507,7 +511,7 @@ struct GestureCross: View {
                     .font(WireFont.label(7, .semibold)).lineLimit(1)
             }
             .foregroundStyle(on ? p.paper : p.ink)
-            .frame(width: 104, height: 34)
+            .frame(width: WireFont.w(104), height: WireFont.w(34))
             .background(on ? p.ink : .clear)
             .overlay(Rectangle().strokeBorder(p.ink, lineWidth: 1))
             .contentShape(Rectangle())
@@ -654,7 +658,7 @@ struct PointerTab: View {
                         WireSlider(value: $dpi, range: 200...4000, step: 50, ticks: 38, p: p) { engine.setDPI(Int(dpi)) }
                         Text("4000").font(WireFont.label(8)).foregroundStyle(p.faint)
                         Text("\(Int(dpi)) DPI").font(WireFont.label(12, .bold)).foregroundStyle(p.ink)
-                            .monospacedDigit().frame(width: 90, alignment: .trailing)
+                            .monospacedDigit().frame(width: WireFont.w(90), alignment: .trailing)
                     }
                     Text("SENSOR RESOLUTION. MACOS TRACKING SPEED STILL APPLIES ON TOP.").font(WireFont.label(8)).foregroundStyle(p.faint)
                 } else {
@@ -679,7 +683,7 @@ struct PointerTab: View {
                                                   set: { state.config.pointer.smartShiftThreshold = Int($0) }),
                                    range: 1...50, step: 1, ticks: 10, p: p)
                         Text("\(state.config.pointer.smartShiftThreshold)").font(WireFont.label(11, .bold)).foregroundStyle(p.ink)
-                            .monospacedDigit().frame(width: 30, alignment: .trailing)
+                            .monospacedDigit().frame(width: WireFont.w(30), alignment: .trailing)
                     }
                 }
             }
@@ -770,8 +774,8 @@ struct FlowTab: View {
     private func channelRow(_ name: String, _ mouse: Int?, _ keyboard: Int?) -> some View {
         func s(_ v: Int?) -> String { v.map { "CH \($0 + 1)" } ?? "CH ?" }
         return HStack {
-            Text(name).font(WireFont.label(9, .bold)).foregroundStyle(p.ink).frame(width: 160, alignment: .leading)
-            Text("MOUSE \(s(mouse))").font(WireFont.label(9)).foregroundStyle(p.ink).frame(width: 110, alignment: .leading)
+            Text(name).font(WireFont.label(9, .bold)).foregroundStyle(p.ink).frame(width: WireFont.w(160), alignment: .leading)
+            Text("MOUSE \(s(mouse))").font(WireFont.label(9)).foregroundStyle(p.ink).frame(width: WireFont.w(110), alignment: .leading)
             Text("KEYS \(s(keyboard))").font(WireFont.label(9)).foregroundStyle(p.ink)
             Spacer()
         }

@@ -24,10 +24,18 @@ struct WirePalette {
 }
 
 enum WireFont {
+    /// User text size (Settings → TEXT). Applies to all UI text and to boxes sized around text.
+    static var scale: CGFloat = 1.25
     static func label(_ size: CGFloat = 9, _ weight: Font.Weight = .regular) -> Font {
+        .system(size: size * scale, weight: weight, design: .monospaced)
+    }
+    /// Unscaled, for text drawn inside fixed-size artwork (markers, diagrams).
+    static func fixed(_ size: CGFloat = 9, _ weight: Font.Weight = .regular) -> Font {
         .system(size: size, weight: weight, design: .monospaced)
     }
-    static let jp = Font.system(size: 8, weight: .medium)
+    static var jp: Font { .system(size: 8 * scale, weight: .medium) }
+    /// Scale a text-dependent width.
+    static func w(_ v: CGFloat) -> CGFloat { (v * scale).rounded() }
 }
 
 // MARK: - Window dragging
@@ -112,7 +120,7 @@ struct MenuPanel: View {
             }
         }
         .padding(16)
-        .frame(width: 372)
+        .frame(width: WireFont.w(372))
         .background(p.paper)
         .overlay(CornerMarks(p: p))
         .overlay(Rectangle().strokeBorder(p.ink, lineWidth: 1))
@@ -245,7 +253,7 @@ struct CellGauge: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Text(label).font(WireFont.label(8, .semibold)).foregroundStyle(p.ink).frame(width: 40, alignment: .leading)
+            Text(label).font(WireFont.label(8, .semibold)).foregroundStyle(p.ink).frame(width: WireFont.w(40), alignment: .leading)
             // While charging, one extra cell "fills" in a slow sweep, like a charge indicator.
             TimelineView(.periodic(from: .now, by: 0.5)) { timeline in
                 let tick = Int(timeline.date.timeIntervalSinceReferenceDate * 2)
@@ -258,7 +266,7 @@ struct CellGauge: View {
                     Text(d.chargeState.label).font(WireFont.label(6, .bold)).foregroundStyle(p.faint)
                 }
             }
-            .frame(width: 58, alignment: .trailing)
+            .frame(width: WireFont.w(58), alignment: .trailing)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(label) battery \(readout) \(device?.chargeState.label.lowercased() ?? "")")
@@ -442,11 +450,11 @@ struct FlowDiagram: View {
                 arrow.addLine(to: CGPoint(x: tip.x + dir * 4, y: y + 3))
             }
             ctx.stroke(arrow, with: .color(enabled ? p.ink : p.faint), style: StrokeStyle(lineWidth: 1, dash: enabled ? [] : [2, 2]))
-            ctx.draw(Text("A").font(WireFont.label(8, .bold)).foregroundColor(p.ink), at: CGPoint(x: thisRect.midX, y: thisRect.midY))
-            ctx.draw(Text("B").font(WireFont.label(8, .bold)).foregroundColor(enabled ? p.ink : p.faint),
+            ctx.draw(Text("A").font(WireFont.fixed(8, .bold)).foregroundColor(p.ink), at: CGPoint(x: thisRect.midX, y: thisRect.midY))
+            ctx.draw(Text("B").font(WireFont.fixed(8, .bold)).foregroundColor(enabled ? p.ink : p.faint),
                      at: CGPoint(x: otherRect.midX, y: otherRect.midY))
-            ctx.draw(Text("THIS").font(WireFont.label(6)).foregroundColor(p.faint), at: CGPoint(x: thisRect.midX, y: size.height - 3))
-            ctx.draw(Text((peer ?? "OTHER").uppercased().prefix(10)).font(WireFont.label(6)).foregroundColor(p.faint),
+            ctx.draw(Text("THIS").font(WireFont.fixed(6)).foregroundColor(p.faint), at: CGPoint(x: thisRect.midX, y: size.height - 3))
+            ctx.draw(Text((peer ?? "OTHER").uppercased().prefix(10)).font(WireFont.fixed(6)).foregroundColor(p.faint),
                      at: CGPoint(x: otherRect.midX, y: size.height - 3))
         }
     }
