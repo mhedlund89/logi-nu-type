@@ -30,6 +30,28 @@ enum WireFont {
     static let jp = Font.system(size: 8, weight: .medium)
 }
 
+// MARK: - Window dragging
+
+/// Lets a SwiftUI region drag its window (title-bar-less panels, and the settings header).
+struct WindowDragArea: NSViewRepresentable {
+    var onDragged: () -> Void = {}
+
+    func makeNSView(context: Context) -> DragView { DragView(onDragged: onDragged) }
+    func updateNSView(_ v: DragView, context: Context) { v.onDragged = onDragged }
+
+    final class DragView: NSView {
+        var onDragged: () -> Void
+        init(onDragged: @escaping () -> Void) { self.onDragged = onDragged; super.init(frame: .zero) }
+        required init?(coder: NSCoder) { fatalError("unused") }
+        override var mouseDownCanMoveWindow: Bool { true }
+        override func mouseDown(with event: NSEvent) {
+            let before = window?.frame.origin
+            window?.performDrag(with: event)   // runs until the mouse is released
+            if window?.frame.origin != before { onDragged() }
+        }
+    }
+}
+
 // MARK: - Panel
 
 struct MenuPanel: View {
@@ -38,6 +60,8 @@ struct MenuPanel: View {
     let openSettings: () -> Void
     let quitLogiOptions: () -> Void
     let openPrivacy: (String) -> Void
+    var onDetach: () -> Void = {}
+    var onClose: (() -> Void)? = nil
 
     @Environment(\.colorScheme) private var scheme
     private var p: WirePalette { WirePalette(scheme) }
@@ -103,6 +127,8 @@ struct MenuPanel: View {
                 Spacer()
                 Text("Fig. 01 — Control Schematic").font(.system(size: 7, weight: .regular, design: .serif))
                     .italic().foregroundStyle(p.faint)
+                headerButton("⤢", help: "Open full settings", action: openSettings)
+                if let onClose { headerButton("×", help: "Close", action: onClose) }
             }
             HStack {
                 Text(state.mouse?.name.uppercased() ?? "NO UNIT").font(WireFont.label(8))
@@ -112,6 +138,20 @@ struct MenuPanel: View {
             .foregroundStyle(p.faint)
             Rectangle().fill(p.ink).frame(height: 1)
         }
+        .background(WindowDragArea(onDragged: onDetach))
+        .help("Drag to move the panel off the menu bar")
+    }
+
+    private func headerButton(_ glyph: String, help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(glyph).font(WireFont.label(10, .bold)).foregroundStyle(p.ink)
+                .frame(width: 16, height: 16)
+                .overlay(Rectangle().strokeBorder(p.ink, lineWidth: 1))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
+        .accessibilityLabel(help)
     }
 
     @ViewBuilder private var warnings: some View {
@@ -536,6 +576,8 @@ struct MouseSchematic: View {
 final class MenuPanelController: NSObject, NSWindowDelegate {
     private var panel: NSPanel?
     private var monitor: Any?
+    /// Once dragged off the menu bar the panel stays put until closed explicitly.
+    private(set) var pinned = false
     private let makeView: () -> AnyView
 
     init(makeView: @escaping () -> AnyView) { self.makeView = makeView }
@@ -568,8 +610,21 @@ final class MenuPanelController: NSObject, NSWindowDelegate {
             p.setFrameOrigin(NSPoint(x: x, y: r.minY - size.height - 4))
         }
         panel = p
+        pinned = false
         p.makeKeyAndOrderFront(nil)
-        monitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in self?.close() }
+        monitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            guard let self, !self.pinned else { return }
+            self.close()
+        }
+    }
+
+    /// Called when the user drags the panel: keep it open as a floating window.
+    func pin() {
+        guard let p = panel else { return }
+        pinned = true
+        p.level = .floating
+        if let m = monitor { NSEvent.removeMonitor(m) }
+        monitor = nil
     }
 
     func close() {
@@ -577,12 +632,13 @@ final class MenuPanelController: NSObject, NSWindowDelegate {
         monitor = nil
         panel?.orderOut(nil)
         panel = nil
+        pinned = false
     }
 
-    func windowDidResignKey(_ notification: Notification) { close() }
+    func windowDidResignKey(_ notification: Notification) { if !pinned { close() } }
 }
 
 private final class KeyPanel: NSPanel {
     override var canBecomeKey: Bool { true }
-    override func cancelOperation(_ sender: Any?) { orderOut(nil) }
+    override func cancelOperation(_ sender: Any?) { (delegate as? MenuPanelController)?.close() }
 }

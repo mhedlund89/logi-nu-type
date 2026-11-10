@@ -15,7 +15,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         AnyView(MenuPanel(state: self.state, engine: self.engine,
                           openSettings: { [unowned self] in self.panel.close(); self.openSettings() },
                           quitLogiOptions: { Self.quitLogiOptions() },
-                          openPrivacy: { Self.openPrivacyPane($0) }))
+                          openPrivacy: { Self.openPrivacyPane($0) },
+                          onDetach: { [unowned self] in self.panel.pin() },
+                          onClose: { [unowned self] in self.panel.close() }))
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -117,15 +119,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func openSettings() {
         if settingsWindow == nil {
-            let w = NSWindow(contentViewController: NSHostingController(rootView: SettingsView(state: state, engine: engine)))
+            let host = NSHostingController(rootView: SettingsView(state: state, engine: engine))
+            host.sizingOptions = [.minSize]   // SwiftUI sets only the minimum; the window stays freely resizable
+            let w = NSWindow(contentViewController: host)
             w.title = "Logi Lite"
             w.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
             w.titlebarAppearsTransparent = true
             w.titleVisibility = .hidden
             w.isMovableByWindowBackground = true
             w.isReleasedWhenClosed = false
+            w.contentMinSize = NSSize(width: 900, height: 660)
             w.setContentSize(NSSize(width: 980, height: 760))
             w.center()
+            w.setFrameAutosaveName("LogiLiteSettings")   // remembers size and position
             settingsWindow = w
         }
         NSApp.activate(ignoringOtherApps: true)

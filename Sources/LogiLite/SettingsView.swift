@@ -96,6 +96,7 @@ struct SettingsView: View {
         .padding(.horizontal, 22)
         .padding(.top, 34)   // clear the transparent title bar's window buttons
         .padding(.bottom, 14)
+        .background(WindowDragArea())   // drag the window from anywhere in the header
     }
 }
 
