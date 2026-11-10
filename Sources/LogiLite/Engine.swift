@@ -34,20 +34,27 @@ final class AppState: ObservableObject {
     init() { config = ConfigStore.load() }
 }
 
-/// Global event tap for scroll wheel and pointer movement.
+/// Global event tap. `listenOnly` taps can observe but never delay or drop events, so pointer movement goes
+/// through one of those: a busy main thread must never be able to stall the cursor.
 final class EventTap {
     var handler: ((CGEventType, CGEvent) -> CGEvent?)?
     private var tap: CFMachPort?
+    private let types: [CGEventType]
+    private let listenOnly: Bool
+
+    init(types: [CGEventType], listenOnly: Bool) {
+        self.types = types
+        self.listenOnly = listenOnly
+    }
 
     var isRunning: Bool { tap != nil }
 
     func start() -> Bool {
         guard tap == nil else { return true }
-        let types: [CGEventType] = [.scrollWheel, .mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged,
-                                     .otherMouseDown, .otherMouseUp]
         let mask = types.reduce(CGEventMask(0)) { $0 | (CGEventMask(1) << $1.rawValue) }
         let ctx = Unmanaged.passUnretained(self).toOpaque()
-        guard let port = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap,
+        guard let port = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap,
+                                           options: listenOnly ? .listenOnly : .defaultTap,
                                            eventsOfInterest: mask, callback: { _, type, event, refcon in
             guard let refcon else { return Unmanaged.passUnretained(event) }
             let me = Unmanaged<EventTap>.fromOpaque(refcon).takeUnretainedValue()
@@ -55,7 +62,8 @@ final class EventTap {
                 if let t = me.tap { CGEvent.tapEnable(tap: t, enable: true) }
                 return Unmanaged.passUnretained(event)
             }
-            guard let out = me.handler?(type, event) else { return nil }
+            guard let handler = me.handler else { return Unmanaged.passUnretained(event) }
+            guard let out = handler(type, event) else { return nil }
             return Unmanaged.passUnretained(out)
         }, userInfo: ctx) else { return false }
         tap = port
@@ -70,7 +78,11 @@ final class Engine {
     let state: AppState
     let devices = DeviceManager()
     lazy var flow = FlowService(state: state, devices: devices)
-    private let tap = EventTap()
+    /// Can modify/drop: scroll wheel and back/forward/middle.
+    private let actionTap = EventTap(types: [.scrollWheel, .otherMouseDown, .otherMouseUp], listenOnly: false)
+    /// Observe only: pointer movement for gestures and Flow.
+    private let motionTap = EventTap(types: [.mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged],
+                                     listenOnly: true)
 
     private struct GestureTrack {
         var dx = 0.0, dy = 0.0, fired = false
@@ -122,7 +134,8 @@ final class Engine {
             if old.flow != new.flow { self.flow.configure() }
         }
 
-        tap.handler = { [weak self] type, event in self?.handle(type, event) ?? event }
+        actionTap.handler = { [weak self] type, event in self?.handle(type, event) ?? event }
+        motionTap.handler = { [weak self] type, event in self?.handle(type, event); return event }
         startTapWhenPermitted()
 
         // Battery changes are pushed by the device, but poll occasionally as a fallback.
@@ -138,7 +151,7 @@ final class Engine {
     }
 
     private func startTapWhenPermitted() {
-        if tap.start() { state.accessibilityGranted = true; Log.info("event tap started"); return }
+        if actionTap.start() && motionTap.start() { state.accessibilityGranted = true; Log.info("event taps started"); return }
         state.accessibilityGranted = false
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in self?.startTapWhenPermitted() }
     }
@@ -244,6 +257,7 @@ final class Engine {
 
     // MARK: Event tap
 
+    @discardableResult
     private func handle(_ type: CGEventType, _ e: CGEvent) -> CGEvent? {
         if e.getIntegerValueField(.eventSourceUserData) == ActionRunner.syntheticMarker { return e }
         switch type {
@@ -254,8 +268,9 @@ final class Engine {
         default:
             if !gestures.isEmpty {
                 movement(e.getDoubleValueField(.mouseEventDeltaX), e.getDoubleValueField(.mouseEventDeltaY))
+            } else {
+                flow.pointerMoved(e, isDrag: type != .mouseMoved)
             }
-            flow.pointerMoved(e, isDrag: type != .mouseMoved)
             return e
         }
     }

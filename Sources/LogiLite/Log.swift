@@ -17,6 +17,11 @@ enum Log {
         logger.info("\(message, privacy: .public)")
         let line = "\(formatter.string(from: Date())) \(message)\n"
         queue.async {
+            if let size = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? Int, size > 1_000_000 {
+                let old = url.deletingPathExtension().appendingPathExtension("old.log")
+                try? FileManager.default.removeItem(at: old)
+                try? FileManager.default.moveItem(at: url, to: old)
+            }
             if let h = try? FileHandle(forWritingTo: url) {
                 h.seekToEndOfFile()
                 h.write(Data(line.utf8))

@@ -164,6 +164,11 @@ enum FlowEdge: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+/// Decode helper: a missing or unreadable field keeps its default instead of failing the whole settings file.
+extension KeyedDecodingContainer {
+    func value<T: Decodable>(_ key: Key, default d: T) -> T { ((try? decodeIfPresent(T.self, forKey: key)) ?? nil) ?? d }
+}
+
 struct FlowConfig: Codable, Hashable {
     var enabled = false
     var secret: String?
@@ -175,6 +180,21 @@ struct FlowConfig: Codable, Hashable {
     var peerName: String?
     var peerMouseHost: Int?
     var peerKeyboardHost: Int?
+
+    init() {}
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = FlowConfig()
+        enabled = c.value(.enabled, default: d.enabled)
+        secret = c.value(.secret, default: d.secret)
+        otherMacEdge = c.value(.otherMacEdge, default: d.otherMacEdge)
+        requireControl = c.value(.requireControl, default: d.requireControl)
+        keyboardFollows = c.value(.keyboardFollows, default: d.keyboardFollows)
+        clipboard = c.value(.clipboard, default: d.clipboard)
+        peerName = c.value(.peerName, default: d.peerName)
+        peerMouseHost = c.value(.peerMouseHost, default: d.peerMouseHost)
+        peerKeyboardHost = c.value(.peerKeyboardHost, default: d.peerKeyboardHost)
+    }
 }
 
 struct PointerConfig: Codable, Hashable {
@@ -183,6 +203,17 @@ struct PointerConfig: Codable, Hashable {
     var smartShiftThreshold = 16
     var reverseWheel = false
     var reverseThumbWheel = false
+
+    init() {}
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = PointerConfig()
+        dpi = c.value(.dpi, default: d.dpi)
+        smartShift = c.value(.smartShift, default: d.smartShift)
+        smartShiftThreshold = c.value(.smartShiftThreshold, default: d.smartShiftThreshold)
+        reverseWheel = c.value(.reverseWheel, default: d.reverseWheel)
+        reverseThumbWheel = c.value(.reverseThumbWheel, default: d.reverseThumbWheel)
+    }
 }
 
 struct Config: Codable, Hashable {
@@ -190,6 +221,17 @@ struct Config: Codable, Hashable {
     var apps: [Profile]
     var pointer = PointerConfig()
     var flow = FlowConfig()
+
+    init(defaults: Profile, apps: [Profile], pointer: PointerConfig = PointerConfig(), flow: FlowConfig = FlowConfig()) {
+        self.defaults = defaults; self.apps = apps; self.pointer = pointer; self.flow = flow
+    }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        defaults = try c.decode(Profile.self, forKey: .defaults)
+        apps = c.value(.apps, default: [])
+        pointer = c.value(.pointer, default: PointerConfig())
+        flow = c.value(.flow, default: FlowConfig())
+    }
 
     func profile(for bundleID: String?) -> Profile? {
         guard let bundleID else { return nil }

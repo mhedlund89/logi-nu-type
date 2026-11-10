@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var settingsWindow: NSWindow?
     private var cancellables = Set<AnyCancellable>()
+    private var sigterm: DispatchSourceSignal?
     private lazy var panel: MenuPanelController = MenuPanelController { [unowned self] in
         AnyView(MenuPanel(state: self.state, engine: self.engine,
                           openSettings: { [unowned self] in self.panel.close(); self.openSettings() },
@@ -31,18 +32,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updateStatusButton()
 
         engine.start()
-        if UserDefaults.standard.bool(forKey: "debugActions") {
-            // Debug only: `defaults write local.logilite.app debugActions -bool true`, then post
-            // a distributed notification named local.logilite.debug.<actionKind> to run an action in-process.
-            for kind in ActionKind.allCases {
-                DistributedNotificationCenter.default().addObserver(
-                    forName: Notification.Name("local.logilite.debug.\(kind.rawValue)"), object: nil, queue: .main) { [weak self] _ in
-                    Log.info("debug trigger: \(kind.rawValue) axTrusted=\(AXIsProcessTrusted())")
-                    ActionRunner.press(Action(kind), mouse: self?.engine.devices.mouse)
-                    ActionRunner.release(Action(kind))
-                }
-            }
-        }
+        signal(SIGTERM, SIG_IGN)
+        let term = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+        term.setEventHandler { NSApp.terminate(nil) }
+        term.resume()
+        sigterm = term
         checkEnvironment()
         Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in self?.checkEnvironment() }
     }
@@ -75,11 +69,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/bin/launchctl")
         p.arguments = ["bootout", "gui/\(getuid())/com.logitech.manager.daemon"]
+        p.terminationHandler = { _ in
+            DispatchQueue.main.async {
+                NSWorkspace.shared.runningApplications
+                    .filter { ($0.bundleIdentifier ?? "").hasPrefix("com.logitech.") }
+                    .forEach { $0.terminate() }
+            }
+        }
         try? p.run()
-        p.waitUntilExit()
-        NSWorkspace.shared.runningApplications
-            .filter { ($0.bundleIdentifier ?? "").hasPrefix("com.logitech.") }
-            .forEach { $0.terminate() }
     }
 
     static func relaunch() {
