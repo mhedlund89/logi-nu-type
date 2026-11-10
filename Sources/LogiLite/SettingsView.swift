@@ -274,7 +274,7 @@ struct MouseTab: View {
         VStack(alignment: .leading, spacing: 16) {
             profileBar
             HStack(alignment: .top, spacing: 22) {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .center, spacing: 8) {
                     MouseIllustration(callouts: callouts, connected: state.mouse != nil, p: p,
                                       selected: callouts.first { $0.part == part }?.index,
                                       legendColumns: 3, onSelect: { part = $0 })
@@ -282,6 +282,8 @@ struct MouseTab: View {
                     Text("SELECT A NUMBERED MARKER OR A LEGEND ROW TO ASSIGN IT")
                         .font(WireFont.label(8)).foregroundStyle(p.faint)
                 }
+                .padding(.top, 18)
+                .frame(maxWidth: .infinity)
                 inspector.frame(minWidth: 300, maxWidth: .infinity)
             }
         }

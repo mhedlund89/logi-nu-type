@@ -14,10 +14,10 @@ struct MouseIllustration: View {
     @Environment(\.colorScheme) private var scheme
 
     /// Pixel size of mouse-cutaway.png; anchors are in these coordinates.
-    static let imageSize = CGSize(width: 872, height: 512)
+    static let imageSize = CGSize(width: 872, height: 536)
     static let anchors: [MouseSchematic.Part: CGPoint] = [
-        .wheel: CGPoint(x: 240, y: 250), .wheelMode: CGPoint(x: 343, y: 127), .thumbWheel: CGPoint(x: 540, y: 185),
-        .forward: CGPoint(x: 580, y: 213), .back: CGPoint(x: 540, y: 268), .gesture: CGPoint(x: 650, y: 252),
+        .wheel: CGPoint(x: 240, y: 274), .wheelMode: CGPoint(x: 343, y: 151), .thumbWheel: CGPoint(x: 540, y: 209),
+        .forward: CGPoint(x: 580, y: 237), .back: CGPoint(x: 540, y: 292), .gesture: CGPoint(x: 650, y: 276),
     ]
 
     static let image: NSImage? = {
