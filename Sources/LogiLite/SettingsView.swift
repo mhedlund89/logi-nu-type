@@ -394,33 +394,31 @@ struct MouseTab: View {
     }
 }
 
-/// The mouse drawing rendered natively at 1.5× (sharp), with invisible hit targets over each callout row and part.
+/// The mouse drawing rendered natively (sharp), with invisible hit targets over each callout label and part.
 struct InteractiveSchematic: View {
     let callouts: [MouseSchematic.Callout]
     let connected: Bool
     let p: WirePalette
     @Binding var selected: MouseSchematic.Part
-    var width: CGFloat = 540
+    var width: CGFloat = 560
 
     var body: some View {
-        let s = width / MouseSchematic.designSize.width
-        let size = CGSize(width: width, height: MouseSchematic.designSize.height * s)
-        let rowH = MouseSchematic.rowHeight(of: callouts.count) * s
-        let labelX = MouseSchematic.labelX * s
+        let design = MouseSchematic.designSize(.side)
+        let s = width / design.width
+        let origin = MouseSchematic.origin(.side)
         ZStack(alignment: .topLeading) {
             MouseSchematic(callouts: callouts, connected: connected, p: p,
-                           selected: callouts.first { $0.part == selected }?.index)
-                .frame(width: size.width, height: size.height)
-            ForEach(Array(callouts.enumerated()), id: \.offset) { i, c in
-                hit(c).frame(width: size.width - labelX + 4, height: rowH)
-                    .position(x: labelX - 4 + (size.width - labelX + 4) / 2, y: MouseSchematic.rowY(i, of: callouts.count) * s)
+                           selected: callouts.first { $0.part == selected }?.index, layout: .side)
+                .frame(width: width, height: design.height * s)
+            ForEach(callouts, id: \.index) { c in
+                let r = MouseSchematic.hitRect(for: c, in: callouts, layout: .side)
+                hit(c).frame(width: r.width * s, height: r.height * s).position(x: r.midX * s, y: r.midY * s)
                 if let a = MouseSchematic.anchors[c.part] {
-                    hit(c).frame(width: 14 * s, height: 14 * s)
-                        .position(x: (MouseSchematic.origin.x + a.x) * s, y: (MouseSchematic.origin.y + a.y) * s)
+                    hit(c).frame(width: 16 * s, height: 16 * s).position(x: (origin.x + a.x) * s, y: (origin.y + a.y) * s)
                 }
             }
         }
-        .frame(width: size.width, height: size.height, alignment: .topLeading)
+        .frame(width: width, height: design.height * s, alignment: .topLeading)
     }
 
     private func hit(_ c: MouseSchematic.Callout) -> some View {

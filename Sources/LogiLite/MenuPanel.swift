@@ -78,8 +78,8 @@ struct MenuPanel: View {
                 }
             }
             WireSection(title: "CONTROL LAYOUT", jp: "操作系", trailing: profileName.uppercased(), p: p) {
-                MouseSchematic(callouts: callouts, connected: state.mouse != nil, p: p)
-                    .aspectRatio(MouseSchematic.designSize, contentMode: .fit)
+                MouseSchematic(callouts: callouts, connected: state.mouse != nil, p: p, layout: .below)
+                    .aspectRatio(MouseSchematic.designSize(.below), contentMode: .fit)
             }
             WireSection(title: "WHEEL", jp: "ホイール", p: p) {
                 HStack(spacing: 10) {
