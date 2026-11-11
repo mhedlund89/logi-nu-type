@@ -2,12 +2,12 @@
 import PackageDescription
 
 let package = Package(
-    name: "LogiLite",
+    name: "LogiNuType",
     platforms: [.macOS(.v14)],
     targets: [
         .executableTarget(
-            name: "LogiLite",
-            path: "Sources/LogiLite",
+            name: "LogiNuType",
+            path: "Sources/LogiNuType",
             swiftSettings: [.unsafeFlags(["-swift-version", "5"])]
         )
     ]

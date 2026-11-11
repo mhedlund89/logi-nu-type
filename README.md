@@ -32,4 +32,4 @@ Needs Xcode installed (SwiftUI macros aren't in the Command Line Tools).
 4. Set which side the other Mac is on, on each Mac.
 5. Use the mouse on each Mac once so both learn each other's channel. After that, push the cursor off the edge to switch.
 
-Settings live in `~/Library/Application Support/LogiLite/config.json`.
+Settings live in `~/Library/Application Support/LogiNuType/config.json`.

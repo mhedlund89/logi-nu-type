@@ -341,7 +341,12 @@ struct Config: Codable, Hashable {
 enum ConfigStore {
     static var directory: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return base.appendingPathComponent("LogiLite", isDirectory: true)
+        let dir = base.appendingPathComponent("LogiNuType", isDirectory: true)
+        // One-time move of settings saved before the rename to Logi : nu-type.
+        let old = base.appendingPathComponent("LogiLite", isDirectory: true)
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: dir.path), fm.fileExists(atPath: old.path) { try? fm.moveItem(at: old, to: dir) }
+        return dir
     }
     static var file: URL { directory.appendingPathComponent("config.json") }
 

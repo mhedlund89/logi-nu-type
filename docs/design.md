@@ -25,7 +25,7 @@ replacement that runs only in the menu bar, uses little memory, and keeps every 
 - Per-app profiles, keyed by bundle ID, applied when the frontmost app changes.
 - Device settings: SmartShift on/off and its threshold (0x2110), pointer DPI (0x2201),
   scroll direction and speed.
-- Start at login. Settings saved as JSON in ~/Library/Application Support/LogiLite.
+- Start at login. Settings saved as JSON in ~/Library/Application Support/LogiNuType.
 - First run imports the current Logi Options setup:
   - Chrome: wheel-mode button sends Cmd+T
   - Sublime Text: wheel-mode button sends Cmd+Opt+F

@@ -8,7 +8,7 @@ if [[ -z "${DEVELOPER_DIR:-}" && -d /Applications/Xcode.app ]]; then export DEVE
 swift build -c release
 APP="build/Logi nu-type.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp -f .build/release/LogiLite "$APP/Contents/MacOS/LogiLite"
+cp -f .build/release/LogiNuType "$APP/Contents/MacOS/LogiNuType"
 cp -f Support/Info.plist "$APP/Contents/Info.plist"
 cp -f Support/Resources/mouse-cutaway.png "$APP/Contents/Resources/"
 cp -f Support/AppIcon.icns "$APP/Contents/Resources/"
@@ -20,7 +20,8 @@ codesign --force --sign "${IDENTITY:--}" "$APP"
 echo "Signed with: ${IDENTITY:-ad-hoc}"
 
 if [[ "${1:-}" != "--no-install" ]]; then
-  pkill -x LogiLite 2>/dev/null && sleep 1 || true
+  pkill -x LogiLite 2>/dev/null || true   # pre-rename builds
+  pkill -x LogiNuType 2>/dev/null && sleep 1 || true
   mkdir -p "$HOME/Applications"
   ditto "$APP" "$HOME/Applications/Logi nu-type.app"
   open "$HOME/Applications/Logi nu-type.app"

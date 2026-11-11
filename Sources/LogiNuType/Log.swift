@@ -1,12 +1,12 @@
 import Foundation
 import os
 
-/// Small append-only log at ~/Library/Logs/LogiLite.log (also mirrored to the unified log).
+/// Small append-only log at ~/Library/Logs/LogiNuType.log (also mirrored to the unified log).
 enum Log {
     private static let logger = Logger(subsystem: "local.logilite.app", category: "app")
     private static let url = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("Library/Logs/LogiLite.log")
-    private static let queue = DispatchQueue(label: "logilite.log")
+        .appendingPathComponent("Library/Logs/LogiNuType.log")
+    private static let queue = DispatchQueue(label: "loginutype.log")
     private static let formatter: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]

@@ -130,7 +130,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             w.contentMinSize = NSSize(width: 1000, height: 700)
             w.setContentSize(NSSize(width: 1240, height: 860))
             w.center()
-            w.setFrameAutosaveName("LogiLiteSettings")   // remembers size and position
+            w.setFrameAutosaveName("LogiNuTypeSettings")   // remembers size and position
             settingsWindow = w
         }
         NSApp.activate(ignoringOtherApps: true)
@@ -138,7 +138,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-// Developer aid: `LogiLite --render-mark out.png` draws the menu bar mark large, on light and dark bars.
+// Developer aid: `LogiNuType --render-mark out.png` draws the menu bar mark large, on light and dark bars.
 if let i = CommandLine.arguments.firstIndex(of: "--render-mark"), CommandLine.arguments.count > i + 1 {
     let out = URL(fileURLWithPath: CommandLine.arguments[i + 1])
     let mark = NUMark.image()
@@ -164,7 +164,7 @@ if let i = CommandLine.arguments.firstIndex(of: "--render-mark"), CommandLine.ar
     exit(0)
 }
 
-// Developer aid: `LogiLite --render-panel out.png [dark]` draws the menu panel with sample data and exits.
+// Developer aid: `LogiNuType --render-panel out.png [dark]` draws the menu panel with sample data and exits.
 // Must run before anything touches the mouse.
 if let i = CommandLine.arguments.firstIndex(of: "--render-panel"), CommandLine.arguments.count > i + 1 {
     let out = URL(fileURLWithPath: CommandLine.arguments[i + 1])
