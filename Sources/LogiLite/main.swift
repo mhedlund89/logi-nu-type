@@ -148,6 +148,7 @@ if let i = CommandLine.arguments.firstIndex(of: "--render-panel"), CommandLine.a
     state.mouse = DeviceSnapshot(name: "MX Master 2S", battery: 90, chargeState: .discharging, host: 0, hostCount: 3)
     state.keyboard = DeviceSnapshot(name: "MX Keys Mac", battery: 55, chargeState: .charging, host: 0, hostCount: 3)
     state.freeSpin = false
+    state.keyboardMediaKeysFirst = true
     state.frontBundleID = "com.google.Chrome"
     state.accessibilityGranted = true
     state.inputMonitoringGranted = true

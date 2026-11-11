@@ -23,10 +23,10 @@ struct SettingsView: View {
     }
 
     enum SettingsTab: String, CaseIterable, Identifiable {
-        case mouse = "MOUSE", pointer = "POINT & SCROLL", flow = "FLOW", device = "DEVICE"
+        case mouse = "MOUSE", keyboard = "KEYBOARD", pointer = "POINT & SCROLL", flow = "FLOW", device = "DEVICE"
         var id: String { rawValue }
         var jp: String {
-            switch self { case .mouse: return "操作系"; case .pointer: return "ポインタ"; case .flow: return "フロー"; case .device: return "装置" }
+            switch self { case .mouse: return "操作系"; case .keyboard: return "鍵盤"; case .pointer: return "ポインタ"; case .flow: return "フロー"; case .device: return "装置" }
         }
     }
 
@@ -46,6 +46,7 @@ struct SettingsView: View {
         Group {
             switch tab {
             case .mouse: MouseTab(state: state, p: p)
+            case .keyboard: KeyboardTab(state: state, engine: engine, p: p)
             case .pointer: PointerTab(state: state, engine: engine, p: p)
             case .flow: FlowTab(state: state, p: p)
             case .device: DeviceTab(state: state, p: p)
@@ -698,6 +699,162 @@ struct PointerTab: View {
         }
         .onAppear { dpi = Double(state.dpi ?? state.config.pointer.dpi ?? 1000) }
         .onChange(of: state.dpi) { _, new in if let new { dpi = Double(new) } }
+    }
+}
+
+// MARK: - KEYBOARD tab
+
+struct KeyboardTab: View {
+    @ObservedObject var state: AppState
+    let engine: Engine
+    let p: WirePalette
+    @State private var part = Part.fKeys
+
+    enum Part: Int, CaseIterable { case easySwitch = 1, fKeys, fn, status }
+
+    /// Marker positions on keyboard-top.png (654 × 212).
+    private static let anchors: [Part: CGPoint] = [
+        .easySwitch: CGPoint(x: 100, y: 43),   // F1–F3 carry the Easy-Switch channels
+        .fKeys: CGPoint(x: 300, y: 43),
+        .fn: CGPoint(x: 370, y: 182),
+        .status: CGPoint(x: 594, y: 15),       // status light beside the logo
+    ]
+
+    private var kb: DeviceSnapshot? { state.keyboard }
+
+    private var modeText: String {
+        switch state.keyboardMediaKeysFirst {
+        case true?: return "MEDIA KEYS FIRST"
+        case false?: return "STANDARD F1–F12"
+        case nil: return kb == nil ? "—" : "NOT REPORTED"
+        }
+    }
+
+    private var callouts: [SpecCallout] {
+        let channel = kb?.host.map { "CHANNEL \($0 + 1) OF \(kb?.hostCount ?? 3)" } ?? "—"
+        let battery: String = {
+            guard let kb else { return "—" }
+            let level = kb.battery.map { "\($0)%" } ?? "?"
+            return kb.chargeState == .discharging ? "BATTERY \(level)" : "\(kb.chargeState.label) · \(level)"
+        }()
+        let rows: [(Part, String, String)] = [
+            (.easySwitch, "EASY-SWITCH · F1–F3", channel),
+            (.fKeys, "TOP ROW · F1–F12", modeText),
+            (.fn, "FN KEY", state.keyboardMediaKeysFirst == false ? "HOLD FOR MEDIA KEYS" : "HOLD FOR F1–F12"),
+            (.status, "STATUS LIGHT", battery),
+        ]
+        return rows.map { SpecCallout(index: $0.0.rawValue, title: $0.1, value: $0.2, anchor: Self.anchors[$0.0]) }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 8) {
+                Text((kb?.name ?? "MX KEYS").uppercased()).font(WireFont.label(11, .bold)).foregroundStyle(p.ink)
+                Text(kb == nil ? "NOT CONNECTED" : "CONNECTED").font(WireFont.label(8)).foregroundStyle(p.faint)
+                Spacer()
+            }
+            HStack(alignment: .top, spacing: 22) {
+                VStack(alignment: .center, spacing: 8) {
+                    KeyboardIllustration(callouts: callouts, connected: kb != nil, p: p, selected: part.rawValue,
+                                         onSelect: { if let p = Part(rawValue: $0) { part = p } })
+                        .frame(minWidth: 460, idealWidth: 700, maxWidth: 820)
+                    Text("SELECT A NUMBERED MARKER OR A LEGEND ROW")
+                        .font(WireFont.label(8)).foregroundStyle(p.faint)
+                }
+                .padding(.top, 18)
+                .frame(maxWidth: .infinity)
+                inspector.frame(minWidth: WireFont.w(300), maxWidth: .infinity)
+            }
+        }
+    }
+
+    @ViewBuilder private var inspector: some View {
+        switch part {
+        case .easySwitch: easySwitchCard
+        case .fKeys: fKeysCard
+        case .fn: fnCard
+        case .status: statusCard
+        }
+    }
+
+    private func note(_ text: String) -> some View {
+        Text(text).font(WireFont.label(8)).foregroundStyle(p.faint).fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var modeSwitch: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            WireRadio(title: "MEDIA KEYS — BRIGHTNESS, VOLUME, PLAY…", on: state.keyboardMediaKeysFirst == true, p: p) {
+                engine.setKeyboardMediaKeysFirst(true)
+            }
+            WireRadio(title: "STANDARD F1–F12", on: state.keyboardMediaKeysFirst == false, p: p) {
+                engine.setKeyboardMediaKeysFirst(false)
+            }
+        }
+        .disabled(state.keyboardMediaKeysFirst == nil)
+        .opacity(state.keyboardMediaKeysFirst == nil ? 0.4 : 1)
+    }
+
+    private var easySwitchCard: some View {
+        WireCard(title: "1 EASY-SWITCH", jp: "チャンネル", fig: "F1 · F2 · F3", p: p) {
+            HStack(spacing: 0) {
+                ForEach(0..<(kb?.hostCount ?? 3), id: \.self) { i in
+                    let here = kb?.host == i
+                    VStack(spacing: 3) {
+                        Text("CH \(i + 1)").font(WireFont.label(11, .bold))
+                        Text(here ? "THIS MAC" : i == state.config.flow.peerKeyboardHost
+                             ? (state.config.flow.peerName ?? "OTHER MAC").uppercased() : "—")
+                            .font(WireFont.label(7)).lineLimit(1)
+                    }
+                    .foregroundStyle(here ? p.paper : p.ink)
+                    .frame(maxWidth: .infinity).padding(.vertical, 8)
+                    .background(here ? p.ink : .clear)
+                    .overlay(Rectangle().strokeBorder(p.ink, lineWidth: 1))
+                }
+            }
+            if let host = kb?.host {
+                HStack(spacing: 6) {
+                    ForEach(0..<(kb?.hostCount ?? 3), id: \.self) { i in
+                        if i != host {
+                            WireMiniButton(title: "SEND KEYS TO CH \(i + 1)", p: p) { engine.devices.keyboard?.switchHost(to: i) }
+                        }
+                    }
+                }
+                note("THE KEYBOARD LEAVES THIS MAC STRAIGHT AWAY. PRESS F\(host + 1) ON IT TO COME BACK.")
+            }
+            Rectangle().fill(p.hairline).frame(height: 1)
+            WireCheck(label: "SWITCH WITH THE MOUSE (FLOW)", on: state.config.flow.keyboardFollows, p: p) {
+                state.config.flow.keyboardFollows.toggle()
+            }
+        }
+    }
+
+    private var fKeysCard: some View {
+        WireCard(title: "2 TOP ROW", jp: "ファンクション", fig: modeText, p: p) {
+            modeSwitch
+            note(state.keyboardMediaKeysFirst == nil && kb != nil
+                 ? "THIS KEYBOARD DIDN'T REPORT AN F-KEY MODE SETTING."
+                 : "SAVED ON THE KEYBOARD. HOLD FN FOR THE OTHER SET. FN + ESC ALSO FLIPS IT.")
+        }
+    }
+
+    private var fnCard: some View {
+        WireCard(title: "3 FN KEY", jp: "ファンクションキー", p: p) {
+            note(state.keyboardMediaKeysFirst == false
+                 ? "HOLD FN AND PRESS A TOP-ROW KEY FOR ITS MEDIA FUNCTION."
+                 : "HOLD FN AND PRESS A TOP-ROW KEY FOR F1–F12.")
+            note("FN + ESC LOCKS THE OTHER SET. THIS PAGE UPDATES WHEN YOU DO IT.")
+            modeSwitch
+        }
+    }
+
+    private var statusCard: some View {
+        WireCard(title: "4 STATUS LIGHT", jp: "電池", p: p) {
+            CellGauge(label: "KEYS", device: kb, p: p, cells: 20)
+            note(kb?.chargeState.onPower == true
+                 ? "ON USB-C POWER. THE LEVEL SHOWN IS THE LAST READING BEFORE CHARGING."
+                 : "THE LIGHT BY THE LOGO TURNS RED WHEN THE BATTERY IS LOW. CHARGE OVER USB-C.")
+            WireMiniButton(title: "READ AGAIN", p: p, enabled: kb != nil) { engine.devices.keyboard?.refreshBattery() }
+        }
     }
 }
 

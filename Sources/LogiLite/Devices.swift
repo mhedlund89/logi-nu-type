@@ -105,7 +105,74 @@ class LogiDevice {
     }
 }
 
-final class KeyboardController: LogiDevice {}
+final class KeyboardController: LogiDevice {
+    /// true = the top row sends media/special keys and fn gives F1–F12 (the MX Keys default);
+    /// false = standard F1–F12 and fn gives the media keys. nil until read, or if the keyboard has no such setting.
+    private(set) var mediaKeysFirst: Bool?
+    private var fnFeature: UInt16?
+
+    override func start() {
+        for f in Feature.fnInversions + [Feature.reprogControls] { hid.featureIndex(f) { _ in } }
+        super.start()
+        refreshFnMode()
+        logControls()
+    }
+
+    /// Find the first fn-inversion feature the keyboard supports, then read it.
+    func refreshFnMode(_ candidates: [UInt16] = Feature.fnInversions) {
+        if let f = fnFeature { readFnMode(f); return }
+        guard let f = candidates.first else { Log.info("keyboard: no F-key mode feature"); return }
+        hid.featureIndex(f) { [weak self] idx in
+            guard let self else { return }
+            if idx == nil { self.refreshFnMode(Array(candidates.dropFirst())); return }
+            self.fnFeature = f
+            self.readFnMode(f)
+        }
+    }
+
+    private func readFnMode(_ f: UInt16) {
+        // 0x40A3 is per host: pass 0xFF ("this host") and skip the host byte in the reply.
+        let multi = f == Feature.fnInversionMultiHost
+        hid.call(f, 0, multi ? [0xFF] : []) { [weak self] r in
+            guard let self, let r else { return }
+            let i = multi ? 1 : 0
+            guard r.count > i else { return }
+            self.mediaKeysFirst = r[i] & 1 == 1
+            Log.info(String(format: "keyboard: F-key mode feature 0x%04X reply %@ -> mediaKeysFirst=%@", f,
+                            r.prefix(4).map { String(format: "%02X", $0) }.joined(separator: " "), "\(self.mediaKeysFirst!)"))
+            self.onChange?()
+        }
+    }
+
+    func setMediaKeysFirst(_ on: Bool) {
+        guard let f = fnFeature else { return }
+        let multi = f == Feature.fnInversionMultiHost
+        hid.call(f, 1, (multi ? [0xFF] : []) + [on ? 1 : 0]) { [weak self] _ in self?.readFnMode(f) }
+    }
+
+    override func handleNotification(feature: UInt16, function: UInt8, params: [UInt8]) {
+        // fn + Esc on the keyboard flips the mode and announces it.
+        if Feature.fnInversions.contains(feature) { if let f = fnFeature { readFnMode(f) }; return }
+        super.handleNotification(feature: feature, function: function, params: params)
+    }
+
+    /// Log the keyboard's programmable keys once (control ID, task, flags) — groundwork for per-key remapping.
+    private func logControls() {
+        hid.call(Feature.reprogControls, 0) { [weak self] r in
+            guard let self, let count = r?.first, count > 0 else { return }
+            var rows: [String] = []
+            for i in 0..<count {
+                self.hid.call(Feature.reprogControls, 1, [i]) { r in
+                    if let r, r.count >= 5 {
+                        rows.append(String(format: "cid=0x%04X task=0x%04X flags=0x%02X", Int(r[0]) << 8 | Int(r[1]),
+                                           Int(r[2]) << 8 | Int(r[3]), r[4]))
+                    }
+                    if i == count - 1 { Log.info("keyboard controls (\(rows.count)): " + rows.joined(separator: "; ")) }
+                }
+            }
+        }
+    }
+}
 
 /// Divertable controls on the MX Master 2S.
 enum ControlID {

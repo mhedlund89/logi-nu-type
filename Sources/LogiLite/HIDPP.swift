@@ -10,6 +10,11 @@ enum Feature {
     static let reprogControls: UInt16 = 0x1B04
     static let smartShift: UInt16 = 0x2110
     static let adjustableDPI: UInt16 = 0x2201
+    /// F-key mode ("fn inversion"), newest first: multi-host (MX Keys), new, original.
+    static let fnInversionMultiHost: UInt16 = 0x40A3
+    static let fnInversionNew: UInt16 = 0x40A2
+    static let fnInversion: UInt16 = 0x40A0
+    static let fnInversions = [fnInversionMultiHost, fnInversionNew, fnInversion]
 }
 
 /// One Logitech device spoken to over HID++ 2.0 (long reports, Bluetooth device index 0xFF).

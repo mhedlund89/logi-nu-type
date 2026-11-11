@@ -38,6 +38,8 @@ final class AppState: ObservableObject {
     @Published var frontBundleID: String?
     @Published var mouse: DeviceSnapshot?
     @Published var keyboard: DeviceSnapshot?
+    /// Keyboard top row: media keys first (true) or standard F1–F12 (false); nil = unknown.
+    @Published var keyboardMediaKeysFirst: Bool?
     @Published var dpi: Int?
     @Published var freeSpin: Bool?
     @Published var flowStatus = "Off"
@@ -197,6 +199,7 @@ final class Engine {
         }
         state.mouse = snap(devices.mouse)
         state.keyboard = snap(devices.keyboard)
+        state.keyboardMediaKeysFirst = devices.keyboard?.mediaKeysFirst
         state.dpi = devices.mouse?.dpi
         state.freeSpin = devices.mouse?.freeSpin
         flow.devicesChanged()
@@ -223,6 +226,10 @@ final class Engine {
     func applySmartShift() {
         let p = state.config.pointer
         devices.mouse?.setSmartShift(enabled: p.smartShift, threshold: p.smartShiftThreshold)
+    }
+
+    func setKeyboardMediaKeysFirst(_ on: Bool) {
+        devices.keyboard?.setMediaKeysFirst(on)
     }
 
     func setDPI(_ dpi: Int) {
