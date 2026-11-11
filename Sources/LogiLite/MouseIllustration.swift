@@ -162,6 +162,7 @@ struct KeyboardIllustration: View {
     let connected: Bool
     let p: WirePalette
     var selected: Int? = nil
+    var legendColumns = 2
     var onSelect: ((Int) -> Void)? = nil
 
     /// Pixel size of keyboard-top.png; anchors are in these coordinates.
@@ -170,7 +171,7 @@ struct KeyboardIllustration: View {
 
     var body: some View {
         SpecIllustration(image: Self.image, imageSize: Self.imageSize, callouts: callouts, connected: connected, p: p,
-                         selected: selected, legendColumns: 2, onSelect: onSelect) {
+                         selected: selected, legendColumns: legendColumns, onSelect: onSelect) {
             Text("— KEYBOARD DRAWING MISSING —").font(WireFont.label(9, .bold)).foregroundStyle(p.faint)
                 .frame(maxWidth: .infinity, minHeight: 120)
         }

@@ -753,18 +753,18 @@ struct KeyboardTab: View {
                 Text(kb == nil ? "NOT CONNECTED" : "CONNECTED").font(WireFont.label(8)).foregroundStyle(p.faint)
                 Spacer()
             }
-            HStack(alignment: .top, spacing: 22) {
-                VStack(alignment: .center, spacing: 8) {
-                    KeyboardIllustration(callouts: callouts, connected: kb != nil, p: p, selected: part.rawValue,
-                                         onSelect: { if let p = Part(rawValue: $0) { part = p } })
-                        .frame(minWidth: 460, idealWidth: 700, maxWidth: 820)
-                    Text("SELECT A NUMBERED MARKER OR A LEGEND ROW")
-                        .font(WireFont.label(8)).foregroundStyle(p.faint)
-                }
-                .padding(.top, 18)
-                .frame(maxWidth: .infinity)
-                inspector.frame(minWidth: WireFont.w(300), maxWidth: .infinity)
+            // The keyboard is wide and short, so it gets the full width; the setting sits underneath.
+            VStack(alignment: .center, spacing: 8) {
+                KeyboardIllustration(callouts: callouts, connected: kb != nil, p: p, selected: part.rawValue,
+                                     legendColumns: 4, onSelect: { if let p = Part(rawValue: $0) { part = p } })
+                    .frame(maxWidth: 1180)
+                Text("SELECT A NUMBERED MARKER OR A LEGEND ROW")
+                    .font(WireFont.label(8)).foregroundStyle(p.faint)
             }
+            .padding(.horizontal, 12)
+            .padding(.top, 10)
+            .frame(maxWidth: .infinity)
+            inspector.frame(maxWidth: 1180).frame(maxWidth: .infinity)
         }
     }
 
