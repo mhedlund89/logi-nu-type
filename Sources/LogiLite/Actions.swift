@@ -32,6 +32,12 @@ enum ActionRunner {
         case .redo: key(0x06, [.maskCommand, .maskShift])
         case .screenshot: key(0x15, [.maskCommand, .maskShift])
         case .toggleWheelMode: mouse?.toggleWheelMode()
+        case .brightnessUp: mediaKey(2)
+        case .brightnessDown: mediaKey(3)
+        case .eject: mediaKey(14)
+        case .lockScreen: key(0x0C, [.maskControl, .maskCommand])
+        case .calculator: NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Calculator.app"))
+        case .contextMenu: rightClick()
         case .keystroke:
             if let k = action.keys { key(CGKeyCode(k.keyCode), CGEventFlags(rawValue: k.modifiers)) }
         case .openApp:
@@ -84,6 +90,15 @@ enum ActionRunner {
                                        timestamp: 0, windowNumber: 0, context: nil,
                                        subtype: 8, data1: data1, data2: -1)
             e?.cgEvent?.post(tap: .cghidEventTap)
+        }
+    }
+
+    static func rightClick() {
+        let loc = CGEvent(source: nil)?.location ?? .zero
+        for type in [CGEventType.rightMouseDown, .rightMouseUp] {
+            guard let e = CGEvent(mouseEventSource: source, mouseType: type, mouseCursorPosition: loc, mouseButton: .right) else { continue }
+            e.setIntegerValueField(.eventSourceUserData, value: syntheticMarker)
+            e.post(tap: .cghidEventTap)
         }
     }
 

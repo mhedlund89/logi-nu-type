@@ -529,10 +529,11 @@ struct ActionList: View {
 
     private static let groups: [(String, [ActionKind])] = [
         ("DEFAULT", [.passthrough, .nothing]),
-        ("SYSTEM", [.missionControl, .appExpose, .showDesktop, .launchpad, .desktopLeft, .desktopRight, .screenshot]),
+        ("SYSTEM", [.missionControl, .appExpose, .showDesktop, .launchpad, .desktopLeft, .desktopRight, .screenshot,
+                    .lockScreen, .calculator, .contextMenu, .brightnessDown, .brightnessUp]),
         ("NAVIGATION", [.browserBack, .browserForward, .middleClick, .toggleWheelMode]),
         ("EDITING", [.copy, .paste, .undo, .redo]),
-        ("MEDIA", [.playPause, .nextTrack, .previousTrack, .volumeUp, .volumeDown, .mute]),
+        ("MEDIA", [.playPause, .nextTrack, .previousTrack, .volumeUp, .volumeDown, .mute, .eject]),
         ("CUSTOM", [.keystroke, .openApp, .openURL]),
     ]
 
@@ -708,17 +709,36 @@ struct KeyboardTab: View {
     @ObservedObject var state: AppState
     let engine: Engine
     let p: WirePalette
-    @State private var part = Part.fKeys
+    @State private var part = Part.keys
+    @State private var selection: ProfileSelection = .all
+    @State private var keyCID: UInt16 = 0x00E5
 
-    enum Part: Int, CaseIterable { case easySwitch = 1, fKeys, fn, status }
+    enum Part: Int, CaseIterable { case easySwitch = 1, fKeys, fn, status, keys }
 
-    /// Marker positions on keyboard-top.png (654 × 212).
+    /// Marker positions on the vector drawing.
     private static let anchors: [Part: CGPoint] = [
-        .easySwitch: CGPoint(x: 100, y: 43),   // F1–F3 carry the Easy-Switch channels
-        .fKeys: CGPoint(x: 300, y: 43),
-        .fn: CGPoint(x: 370, y: 182),
-        .status: CGPoint(x: 594, y: 15),       // status light beside the logo
+        .easySwitch: KeyboardDrawing.easySwitchAnchor,   // F1–F3 carry the Easy-Switch channels
+        .fKeys: KeyboardDrawing.fKeysAnchor,
+        .fn: KeyboardDrawing.fnAnchor,
+        .status: KeyboardDrawing.statusAnchor,           // status light on the logo strip
+        .keys: KeyboardDrawing.keysAnchor,
     ]
+
+    private var profileID: UUID? { if case .app(let id) = selection { return id }; return nil }
+    private var profile: Binding<Profile> {
+        Binding(
+            get: { profileID.flatMap { id in state.config.apps.first { $0.id == id } } ?? state.config.defaults },
+            set: { p in
+                if let i = state.config.apps.firstIndex(where: { $0.id == p.id }) { state.config.apps[i] = p }
+                else { state.config.defaults = p }
+            })
+    }
+    private var keyList: [KeyboardKey] { state.keyboardKeys.isEmpty ? KeyboardKey.all : state.keyboardKeys }
+    private var assignedCount: Int {
+        ([state.config.defaults] + state.config.apps).reduce(0) { n, prof in
+            n + (prof.keys ?? [:]).values.filter { $0.kind != .passthrough }.count
+        }
+    }
 
     private var kb: DeviceSnapshot? { state.keyboard }
 
@@ -742,6 +762,7 @@ struct KeyboardTab: View {
             (.fKeys, "TOP ROW · F1–F12", modeText),
             (.fn, "FN KEY", state.keyboardMediaKeysFirst == false ? "HOLD FOR MEDIA KEYS" : "HOLD FOR F1–F12"),
             (.status, "STATUS LIGHT", battery),
+            (.keys, "PROGRAMMABLE KEYS", assignedCount == 0 ? "ALL DEFAULT" : "\(assignedCount) ASSIGNED"),
         ]
         return rows.map { SpecCallout(index: $0.0.rawValue, title: $0.1, value: $0.2, anchor: Self.anchors[$0.0]) }
     }
@@ -756,8 +777,9 @@ struct KeyboardTab: View {
             // The keyboard is wide and short, so it gets the full width; the setting sits underneath.
             VStack(alignment: .center, spacing: 8) {
                 KeyboardIllustration(callouts: callouts, connected: kb != nil, p: p, selected: part.rawValue,
-                                     legendColumns: 4, onSelect: { if let p = Part(rawValue: $0) { part = p } })
+                                     legendColumns: 5, onSelect: { if let p = Part(rawValue: $0) { part = p } })
                     .frame(maxWidth: 1180)
+                    .fixedSize(horizontal: false, vertical: true)   // never squeeze the drawing vertically
                 Text("SELECT A NUMBERED MARKER OR A LEGEND ROW")
                     .font(WireFont.label(8)).foregroundStyle(p.faint)
             }
@@ -774,6 +796,58 @@ struct KeyboardTab: View {
         case .fKeys: fKeysCard
         case .fn: fnCard
         case .status: statusCard
+        case .keys: keysCard
+        }
+    }
+
+    private func chip(_ title: String, on: Bool, fill: Bool = false, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title).font(WireFont.label(9, .semibold)).lineLimit(1).minimumScaleFactor(0.7)
+                .frame(maxWidth: fill ? .infinity : nil, alignment: .leading)
+                .foregroundStyle(on ? p.paper : p.ink)
+                .padding(.horizontal, 8).padding(.vertical, 5)
+                .background(on ? p.ink : .clear)
+                .overlay(Rectangle().strokeBorder(p.ink, lineWidth: 1))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(on ? .isSelected : [])
+    }
+
+    private var keysCard: some View {
+        let isDefault = profileID == nil
+        let key = KeyboardKey.named(keyCID) ?? KeyboardKey.all[0]
+        let fallback = state.config.defaults.key(keyCID) ?? Action(.passthrough)
+        let own = profile.wrappedValue.key(keyCID)
+        return WireCard(title: "5 PROGRAMMABLE KEYS", jp: "キー割当", fig: profile.wrappedValue.name.uppercased(), p: p) {
+            HStack(spacing: 6) {
+                Text("PROFILE").font(WireFont.label(8, .semibold)).foregroundStyle(p.faint)
+                chip("ALL APPS", on: isDefault) { selection = .all }
+                ForEach(state.config.apps) { app in chip(app.name.uppercased(), on: profileID == app.id) { selection = .app(app.id) } }
+                Spacer()
+            }
+            Text("KEY").font(WireFont.label(8, .semibold)).foregroundStyle(p.faint)
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 5), spacing: 6) {
+                ForEach(keyList) { k in
+                    let assigned = (profile.wrappedValue.key(k.cid)?.kind ?? .passthrough) != .passthrough
+                    chip((assigned ? "● " : "") + k.name.uppercased(), on: keyCID == k.cid, fill: true) { keyCID = k.cid }
+                }
+            }
+            Rectangle().fill(p.hairline).frame(height: 1)
+            Text("\(key.name.uppercased()) — NORMALLY: \(key.native.title.uppercased())")
+                .font(WireFont.label(9, .bold)).foregroundStyle(p.ink)
+            if !isDefault {
+                WireCheck(label: "SAME AS ALL APPS", on: own == nil, p: p) {
+                    profile.wrappedValue.setKey(keyCID, own == nil ? fallback : nil)
+                }
+            }
+            if !isDefault && own == nil {
+                note("USES: " + (fallback.kind == .passthrough ? key.native.title : fallback.summary).uppercased())
+            } else {
+                ActionList(action: Binding(get: { own ?? fallback },
+                                           set: { profile.wrappedValue.setKey(keyCID, $0) }), p: p)
+            }
+            note("PROFILES ARE SHARED WITH THE MOUSE TAB. KEYS ARE TAKEN OVER ONLY WHILE SOMETHING IS ASSIGNED; FN + KEY STILL GIVES F1–F12.")
         }
     }
 

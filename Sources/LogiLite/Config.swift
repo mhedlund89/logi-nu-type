@@ -52,6 +52,7 @@ enum ActionKind: String, Codable, CaseIterable, Identifiable {
     case browserBack, browserForward, middleClick
     case copy, paste, undo, redo, screenshot
     case toggleWheelMode
+    case brightnessUp, brightnessDown, lockScreen, calculator, contextMenu, eject
     case keystroke, openApp, openURL
 
     var id: String { rawValue }
@@ -81,6 +82,12 @@ enum ActionKind: String, Codable, CaseIterable, Identifiable {
         case .redo: return "Redo"
         case .screenshot: return "Screenshot (area)"
         case .toggleWheelMode: return "Toggle wheel ratchet / free spin"
+        case .brightnessUp: return "Brightness up"
+        case .brightnessDown: return "Brightness down"
+        case .lockScreen: return "Lock screen"
+        case .calculator: return "Calculator"
+        case .contextMenu: return "Right-click menu"
+        case .eject: return "Eject"
         case .keystroke: return "Keyboard shortcut…"
         case .openApp: return "Open app…"
         case .openURL: return "Open website…"
@@ -144,8 +151,47 @@ struct Profile: Codable, Hashable, Identifiable {
     var appPath: String?
     var buttons: [String: ButtonConfig] = [:]
     var thumbWheel: ThumbWheelAction?
+    /// MX Keys programmable keys, by control ID ("0x00E5"). Optional so older config files still load.
+    var keys: [String: Action]?
 
     func button(_ b: ButtonID) -> ButtonConfig? { buttons[b.rawValue] }
+    func key(_ cid: UInt16) -> Action? { keys?[KeyboardKey.configKey(cid)] }
+    mutating func setKey(_ cid: UInt16, _ a: Action?) {
+        var k = keys ?? [:]
+        k[KeyboardKey.configKey(cid)] = a
+        keys = k.isEmpty ? nil : k
+    }
+}
+
+/// A programmable MX Keys key: its HID++ control ID, name, and what it does natively.
+struct KeyboardKey: Identifiable, Hashable {
+    let cid: UInt16
+    let name: String
+    let native: ActionKind
+    var id: UInt16 { cid }
+
+    static func configKey(_ cid: UInt16) -> String { String(format: "0x%04X", cid) }
+
+    /// Keys the MX Keys reports as divertable (names from the HID++ control table). The backlight and Easy-Switch
+    /// keys are left to the keyboard: their native behaviour can't be reproduced once they are diverted.
+    static let all: [KeyboardKey] = [
+        KeyboardKey(cid: 0x00C7, name: "Brightness down", native: .brightnessDown),
+        KeyboardKey(cid: 0x00C8, name: "Brightness up", native: .brightnessUp),
+        KeyboardKey(cid: 0x00E0, name: "Mission Control", native: .missionControl),
+        KeyboardKey(cid: 0x00E1, name: "Launchpad", native: .launchpad),
+        KeyboardKey(cid: 0x00E4, name: "Previous track", native: .previousTrack),
+        KeyboardKey(cid: 0x00E5, name: "Play / Pause", native: .playPause),
+        KeyboardKey(cid: 0x00E6, name: "Next track", native: .nextTrack),
+        KeyboardKey(cid: 0x00E7, name: "Mute", native: .mute),
+        KeyboardKey(cid: 0x00E8, name: "Volume down", native: .volumeDown),
+        KeyboardKey(cid: 0x00E9, name: "Volume up", native: .volumeUp),
+        KeyboardKey(cid: 0x000A, name: "Calculator", native: .calculator),
+        KeyboardKey(cid: 0x00BF, name: "Screenshot", native: .screenshot),
+        KeyboardKey(cid: 0x00EA, name: "Right-click menu", native: .contextMenu),
+        KeyboardKey(cid: 0x006F, name: "Lock", native: .lockScreen),
+        KeyboardKey(cid: 0x000D, name: "Eject", native: .eject),
+    ]
+    static func named(_ cid: UInt16) -> KeyboardKey? { all.first { $0.cid == cid } }
 }
 
 enum FlowEdge: String, Codable, CaseIterable, Identifiable {
@@ -240,6 +286,10 @@ struct Config: Codable, Hashable {
 
     func effectiveButton(_ b: ButtonID, bundleID: String?) -> ButtonConfig {
         profile(for: bundleID)?.button(b) ?? defaults.button(b) ?? ButtonConfig(action: Action(.passthrough))
+    }
+
+    func effectiveKey(_ cid: UInt16, bundleID: String?) -> Action {
+        profile(for: bundleID)?.key(cid) ?? defaults.key(cid) ?? Action(.passthrough)
     }
 
     func effectiveThumbWheel(bundleID: String?) -> ThumbWheelAction {

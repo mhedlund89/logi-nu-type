@@ -12,8 +12,8 @@ struct SpecCallout: Identifiable {
 
 /// A hand-drawn spec-sheet illustration with numbered markers on the real parts and an assignment legend.
 /// Light mode multiplies the art onto the paper colour; dark mode inverts it and screens it on.
-struct SpecIllustration<Fallback: View>: View {
-    let image: NSImage?
+struct SpecIllustration<Art: View>: View {
+    /// Size of the artwork in the coordinates the callout anchors use.
     let imageSize: CGSize
     let callouts: [SpecCallout]
     let connected: Bool
@@ -21,7 +21,8 @@ struct SpecIllustration<Fallback: View>: View {
     var selected: Int? = nil
     var legendColumns = 2
     var onSelect: ((Int) -> Void)? = nil
-    @ViewBuilder var fallback: () -> Fallback
+    /// The artwork; it is laid out to fill a frame of `imageSize`'s aspect ratio.
+    @ViewBuilder var art: () -> Art
 
     @Environment(\.colorScheme) private var scheme
 
@@ -41,22 +42,17 @@ struct SpecIllustration<Fallback: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if let image { artwork(image) } else { fallback() }
+            artwork
             legend
         }
     }
 
-    private func artwork(_ art: NSImage) -> some View {
+    private var artwork: some View {
         GeometryReader { g in
             let s = g.size.width / imageSize.width
             ZStack(alignment: .topLeading) {
-                Group {
-                    if scheme == .dark {
-                        Image(nsImage: art).resizable().interpolation(.high).colorInvert().blendMode(.screen)
-                    } else {
-                        Image(nsImage: art).resizable().interpolation(.high).blendMode(.multiply)
-                    }
-                }
+                art()
+                .frame(width: g.size.width, height: g.size.height)
                 .opacity(connected ? 1 : 0.55)
                 .accessibilityHidden(true)
 
@@ -145,18 +141,29 @@ struct MouseIllustration: View {
     ]
     static let image = SpecIllustration<EmptyView>.resource("mouse-cutaway")
 
+    @Environment(\.colorScheme) private var scheme
+
     var body: some View {
-        SpecIllustration(image: Self.image, imageSize: Self.imageSize,
-                         callouts: callouts.map { SpecCallout(index: $0.index, title: $0.title, value: $0.value, anchor: Self.anchors[$0.part]) },
-                         connected: connected, p: p, selected: selected, legendColumns: legendColumns,
-                         onSelect: onSelect.map { cb in { i in if let c = callouts.first(where: { $0.index == i }) { cb(c.part) } } }) {
+        if let art = Self.image {
+            SpecIllustration(imageSize: Self.imageSize,
+                             callouts: callouts.map { SpecCallout(index: $0.index, title: $0.title, value: $0.value, anchor: Self.anchors[$0.part]) },
+                             connected: connected, p: p, selected: selected, legendColumns: legendColumns,
+                             onSelect: onSelect.map { cb in { i in if let c = callouts.first(where: { $0.index == i }) { cb(c.part) } } }) {
+                // Light: multiply the ink onto the paper. Dark: invert and screen it on.
+                if scheme == .dark {
+                    Image(nsImage: art).resizable().interpolation(.high).colorInvert().blendMode(.screen)
+                } else {
+                    Image(nsImage: art).resizable().interpolation(.high).blendMode(.multiply)
+                }
+            }
+        } else {
             MouseSchematic(callouts: callouts, connected: connected, p: p, selected: selected, layout: .side)
                 .aspectRatio(MouseSchematic.designSize(.side), contentMode: .fit)
         }
     }
 }
 
-/// The top view of the MX Keys, from the keyboard illustration sheet.
+/// The top view of the MX Keys, drawn in vector after the keyboard illustration sheet.
 struct KeyboardIllustration: View {
     let callouts: [SpecCallout]
     let connected: Bool
@@ -165,15 +172,10 @@ struct KeyboardIllustration: View {
     var legendColumns = 2
     var onSelect: ((Int) -> Void)? = nil
 
-    /// Pixel size of keyboard-top.png; anchors are in these coordinates.
-    static let imageSize = CGSize(width: 654, height: 212)
-    static let image = SpecIllustration<EmptyView>.resource("keyboard-top")
-
     var body: some View {
-        SpecIllustration(image: Self.image, imageSize: Self.imageSize, callouts: callouts, connected: connected, p: p,
+        SpecIllustration(imageSize: KeyboardDrawing.designSize, callouts: callouts, connected: connected, p: p,
                          selected: selected, legendColumns: legendColumns, onSelect: onSelect) {
-            Text("— KEYBOARD DRAWING MISSING —").font(WireFont.label(9, .bold)).foregroundStyle(p.faint)
-                .frame(maxWidth: .infinity, minHeight: 120)
+            KeyboardDrawing(p: p)
         }
     }
 }

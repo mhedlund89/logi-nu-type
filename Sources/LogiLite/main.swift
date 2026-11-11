@@ -159,7 +159,7 @@ if let i = CommandLine.arguments.firstIndex(of: "--render-panel"), CommandLine.a
     let view: AnyView
     if let tabArg, let tab = SettingsView.SettingsTab.allCases.first(where: { "\($0)" == tabArg }) {
         view = AnyView(SettingsView(state: state, engine: Engine(state: state), initialTab: tab, scrolls: false)
-            .frame(width: 1240, height: 1000).environment(\.colorScheme, scheme))
+            .frame(width: 1240, height: CommandLine.arguments.contains("tall") ? 1700 : 1000).environment(\.colorScheme, scheme))
     } else {
         view = AnyView(MenuPanel(state: state, engine: Engine(state: state), openSettings: {}, quitLogiOptions: {}, openPrivacy: { _ in })
             .environment(\.colorScheme, scheme))

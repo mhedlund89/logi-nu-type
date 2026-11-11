@@ -40,6 +40,8 @@ final class AppState: ObservableObject {
     @Published var keyboard: DeviceSnapshot?
     /// Keyboard top row: media keys first (true) or standard F1–F12 (false); nil = unknown.
     @Published var keyboardMediaKeysFirst: Bool?
+    /// Programmable keys the connected keyboard lets Logi Lite take over.
+    @Published var keyboardKeys: [KeyboardKey] = []
     @Published var dpi: Int?
     @Published var freeSpin: Bool?
     @Published var flowStatus = "Off"
@@ -159,12 +161,20 @@ final class Engine {
             self.applySmartShift()
             if let dpi = self.state.config.pointer.dpi { m.setDPI(dpi) }
         }
+        devices.onKeyboardAttached = { [weak self] k in
+            guard let self else { return }
+            Log.info("keyboard attached: \(k.name)")
+            self.heldKeys.removeAll()
+            k.onKey = { [weak self] cid, down in self?.keyboardKey(cid, down: down) }
+            self.applyKeyboardDiversion()
+        }
         devices.onChange = { [weak self] in self?.publishDevices() }
         devices.start()
 
         state.onConfigChanged = { [weak self] old, new in
             guard let self else { return }
             self.applyDiversion()
+            self.applyKeyboardDiversion()
             if old.pointer.smartShift != new.pointer.smartShift || old.pointer.smartShiftThreshold != new.pointer.smartShiftThreshold {
                 self.applySmartShift()
             }
@@ -185,6 +195,7 @@ final class Engine {
 
     func stop() {
         devices.mouse?.restoreNativeButtons()
+        devices.keyboard?.restoreNativeKeys()
     }
 
     private func startTapWhenPermitted() {
@@ -200,6 +211,8 @@ final class Engine {
         state.mouse = snap(devices.mouse)
         state.keyboard = snap(devices.keyboard)
         state.keyboardMediaKeysFirst = devices.keyboard?.mediaKeysFirst
+        let keys = devices.keyboard?.assignableKeys ?? []
+        if state.keyboardKeys != keys { state.keyboardKeys = keys }
         state.dpi = devices.mouse?.dpi
         state.freeSpin = devices.mouse?.freeSpin
         flow.devicesChanged()
@@ -221,6 +234,30 @@ final class Engine {
         }
         Log.info("diversion: \(wanted.map { String(format: "0x%02X=%@", $0.key, "\($0.value)") }.sorted().joined(separator: " "))")
         m.setDiversion(wanted)
+    }
+
+    /// Divert every MX Keys key that any profile assigns; "Default" in other apps is reproduced in software.
+    func applyKeyboardDiversion() {
+        guard let k = devices.keyboard else { return }
+        let profiles = [state.config.defaults] + state.config.apps
+        let wanted = Set(KeyboardKey.all.map(\.cid).filter { cid in
+            profiles.contains { ($0.key(cid)?.kind ?? .passthrough) != .passthrough }
+        })
+        k.setDiversion(wanted)
+    }
+
+    private var heldKeys: [UInt16: Action] = [:]
+
+    private func keyboardKey(_ cid: UInt16, down: Bool) {
+        if down {
+            var a = state.config.effectiveKey(cid, bundleID: state.frontBundleID)
+            if a.kind == .passthrough { a = Action(KeyboardKey.named(cid)?.native ?? .nothing) }
+            Log.info(String(format: "key 0x%04X down -> %@", cid, a.kind.rawValue))
+            heldKeys[cid] = a
+            ActionRunner.press(a, mouse: devices.mouse)
+        } else if let a = heldKeys.removeValue(forKey: cid) {
+            ActionRunner.release(a)
+        }
     }
 
     func applySmartShift() {

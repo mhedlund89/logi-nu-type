@@ -153,24 +153,69 @@ final class KeyboardController: LogiDevice {
     override func handleNotification(feature: UInt16, function: UInt8, params: [UInt8]) {
         // fn + Esc on the keyboard flips the mode and announces it.
         if Feature.fnInversions.contains(feature) { if let f = fnFeature { readFnMode(f) }; return }
+        if feature == Feature.reprogControls { if function == 0 { handleDivertedKeys(params) }; return }
         super.handleNotification(feature: feature, function: function, params: params)
     }
 
-    /// Log the keyboard's programmable keys once (control ID, task, flags) — groundwork for per-key remapping.
+    // MARK: Programmable keys
+
+    /// Control ID → capability flags, as reported by the keyboard.
+    private(set) var controls: [UInt16: UInt8] = [:]
+    /// Keys Logi Lite can take over: divertable and known.
+    var assignableKeys: [KeyboardKey] { KeyboardKey.all.filter { (controls[$0.cid] ?? 0) & 0x20 != 0 } }
+    var onKey: ((UInt16, Bool) -> Void)?
+    var onControlsLoaded: (() -> Void)?
+    private var diverted: Set<UInt16> = []
+    private var wantedDiversion: Set<UInt16> = []
+    private var pressed: Set<UInt16> = []
+
     private func logControls() {
         hid.call(Feature.reprogControls, 0) { [weak self] r in
             guard let self, let count = r?.first, count > 0 else { return }
-            var rows: [String] = []
+            var found: [UInt16: UInt8] = [:]
             for i in 0..<count {
-                self.hid.call(Feature.reprogControls, 1, [i]) { r in
-                    if let r, r.count >= 5 {
-                        rows.append(String(format: "cid=0x%04X task=0x%04X flags=0x%02X", Int(r[0]) << 8 | Int(r[1]),
-                                           Int(r[2]) << 8 | Int(r[3]), r[4]))
-                    }
-                    if i == count - 1 { Log.info("keyboard controls (\(rows.count)): " + rows.joined(separator: "; ")) }
+                self.hid.call(Feature.reprogControls, 1, [i]) { [weak self] r in
+                    if let r, r.count >= 5 { found[UInt16(r[0]) << 8 | UInt16(r[1])] = r[4] }
+                    guard let self, i == count - 1 else { return }
+                    self.controls = found
+                    Log.info("keyboard: \(found.count) controls, assignable: " + self.assignableKeys.map(\.name).joined(separator: ", "))
+                    self.applyDiversion()
+                    self.onControlsLoaded?()
+                    self.onChange?()
                 }
             }
         }
+    }
+
+    /// Divert exactly these keys to Logi Lite (others go back to the keyboard). Applied once controls are known.
+    func setDiversion(_ cids: Set<UInt16>) {
+        wantedDiversion = cids
+        if !controls.isEmpty { applyDiversion() }
+    }
+
+    private func applyDiversion() {
+        let wanted = wantedDiversion.filter { (controls[$0] ?? 0) & 0x20 != 0 }
+        for cid in diverted.subtracting(wanted) { hid.call(Feature.reprogControls, 3, [UInt8(cid >> 8), UInt8(cid & 0xFF), 0x02]) }
+        for cid in wanted.subtracting(diverted) { hid.call(Feature.reprogControls, 3, [UInt8(cid >> 8), UInt8(cid & 0xFF), 0x03]) }
+        diverted = wanted
+    }
+
+    /// Give every key back to the keyboard, synchronously (safe while quitting).
+    func restoreNativeKeys() {
+        for cid in diverted { hid.sendImmediately(Feature.reprogControls, 3, [UInt8(cid >> 8), UInt8(cid & 0xFF), 0x02]) }
+        diverted.removeAll()
+    }
+
+    private func handleDivertedKeys(_ params: [UInt8]) {
+        var now: Set<UInt16> = []
+        for i in stride(from: 0, to: min(params.count, 8), by: 2) {
+            let cid = UInt16(params[i]) << 8 | UInt16(params[i + 1])
+            if cid != 0 { now.insert(cid) }
+        }
+        let downs = now.subtracting(pressed), ups = pressed.subtracting(now)
+        pressed = now
+        for cid in downs { onKey?(cid, true) }
+        for cid in ups { onKey?(cid, false) }
     }
 }
 

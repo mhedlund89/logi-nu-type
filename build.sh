@@ -10,7 +10,7 @@ APP="build/Logi Lite.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp -f .build/release/LogiLite "$APP/Contents/MacOS/LogiLite"
 cp -f Support/Info.plist "$APP/Contents/Info.plist"
-cp -f Support/Resources/mouse-cutaway.png Support/Resources/keyboard-top.png "$APP/Contents/Resources/"
+cp -f Support/Resources/mouse-cutaway.png "$APP/Contents/Resources/"
 
 # Sign with a stable identity when one exists, so macOS keeps the Accessibility /
 # Input Monitoring permissions across rebuilds. Override with SIGN_IDENTITY=...
