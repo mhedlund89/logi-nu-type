@@ -161,7 +161,7 @@ final class KeyboardController: LogiDevice {
 
     /// Control ID → capability flags, as reported by the keyboard.
     private(set) var controls: [UInt16: UInt8] = [:]
-    /// Keys Logi Lite can take over: divertable and known.
+    /// Keys Logi : nu-type can take over: divertable and known.
     var assignableKeys: [KeyboardKey] { KeyboardKey.all.filter { (controls[$0.cid] ?? 0) & 0x20 != 0 } }
     var onKey: ((UInt16, Bool) -> Void)?
     var onControlsLoaded: (() -> Void)?
@@ -187,7 +187,7 @@ final class KeyboardController: LogiDevice {
         }
     }
 
-    /// Divert exactly these keys to Logi Lite (others go back to the keyboard). Applied once controls are known.
+    /// Divert exactly these keys to Logi : nu-type (others go back to the keyboard). Applied once controls are known.
     func setDiversion(_ cids: Set<UInt16>) {
         wantedDiversion = cids
         if !controls.isEmpty { applyDiversion() }

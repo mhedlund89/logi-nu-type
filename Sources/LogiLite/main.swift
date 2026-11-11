@@ -94,7 +94,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func updateStatusButton() {
         guard let button = statusItem?.button else { return }
-        let img = NSImage(systemSymbolName: "computermouse.fill", accessibilityDescription: "Logi Lite")
+        let img = NSImage(systemSymbolName: "computermouse.fill", accessibilityDescription: "Logi : nu-type")
         img?.isTemplate = true
         button.image = img
         button.imagePosition = .imageLeading
@@ -105,7 +105,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             button.toolTip = "\(m.name): \(m.chargeState.label.capitalized)\(level.isEmpty ? "" : ", \(level)")"
         } else {
             button.title = state.mouse == nil ? " –" : ""
-            button.toolTip = state.mouse == nil ? "Mouse not connected" : "Logi Lite"
+            button.toolTip = state.mouse == nil ? "Mouse not connected" : "Logi : nu-type"
         }
     }
 
@@ -123,7 +123,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let host = NSHostingController(rootView: SettingsView(state: state, engine: engine))
             host.sizingOptions = [.minSize]   // SwiftUI sets only the minimum; the window stays freely resizable
             let w = NSWindow(contentViewController: host)
-            w.title = "Logi Lite"
+            w.title = "Logi : nu-type"
             w.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
             w.titlebarAppearsTransparent = true
             w.titleVisibility = .hidden

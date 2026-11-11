@@ -129,8 +129,8 @@ struct MenuPanel: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text("■ LOGI LITE").font(WireFont.label(12, .bold)).foregroundStyle(p.ink)
-                Text("ロジ・ライト").font(WireFont.jp).foregroundStyle(p.faint)
+                Text("■ LOGI : NU-TYPE").font(WireFont.label(12, .bold)).foregroundStyle(p.ink)
+                Text("ロジ：ニュータイプ").font(WireFont.jp).foregroundStyle(p.faint)
                 Spacer()
                 Text("Fig. 01 — Control Schematic").font(.system(size: 7, weight: .regular, design: .serif))
                     .italic().foregroundStyle(p.faint)

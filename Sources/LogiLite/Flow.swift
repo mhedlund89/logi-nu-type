@@ -15,7 +15,7 @@ private struct FlowMessage: Codable {
     var clipData: Data?
 }
 
-/// Flow between two Macs running Logi Lite: Bonjour discovery, TLS with a pre-shared key from the pairing code,
+/// Flow between two Macs running Logi : nu-type: Bonjour discovery, TLS with a pre-shared key from the pairing code,
 /// Easy-Switch of mouse + keyboard when the cursor is pushed past the shared screen edge, and clipboard sync.
 final class FlowService {
     static let serviceType = "_logilite._tcp"

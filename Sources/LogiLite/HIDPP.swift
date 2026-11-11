@@ -1,7 +1,7 @@
 import Foundation
 import IOKit.hid
 
-/// HID++ 2.0 feature IDs used by Logi Lite.
+/// HID++ 2.0 feature IDs used by Logi : nu-type.
 enum Feature {
     static let root: UInt16 = 0x0000
     static let battery: UInt16 = 0x1000

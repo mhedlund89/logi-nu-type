@@ -40,7 +40,7 @@ final class AppState: ObservableObject {
     @Published var keyboard: DeviceSnapshot?
     /// Keyboard top row: media keys first (true) or standard F1–F12 (false); nil = unknown.
     @Published var keyboardMediaKeysFirst: Bool?
-    /// Programmable keys the connected keyboard lets Logi Lite take over.
+    /// Programmable keys the connected keyboard lets Logi : nu-type take over.
     @Published var keyboardKeys: [KeyboardKey] = []
     @Published var dpi: Int?
     @Published var freeSpin: Bool?

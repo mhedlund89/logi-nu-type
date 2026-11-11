@@ -61,8 +61,8 @@ struct SettingsView: View {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text("■ LOGI LITE").font(WireFont.label(15, .bold)).foregroundStyle(p.ink)
-                        Text("ロジ・ライト  設定").font(WireFont.jp).foregroundStyle(p.faint)
+                        Text("■ LOGI : NU-TYPE").font(WireFont.label(15, .bold)).foregroundStyle(p.ink)
+                        Text("ロジ：ニュータイプ  設定").font(WireFont.jp).foregroundStyle(p.faint)
                     }
                     Text("\(state.mouse?.name.uppercased() ?? "NO UNIT CONNECTED") · SPEC SHEET")
                         .font(WireFont.label(9)).foregroundStyle(p.faint)
@@ -1088,7 +1088,7 @@ struct DeviceTab: View {
             }
             HStack(alignment: .top, spacing: 16) {
                 WireCard(title: "STARTUP", jp: "起動", fig: "FIG. 4-3", p: p) {
-                    WireCheck(label: "OPEN LOGI LITE AT LOGIN", on: loginEnabled, p: p) {
+                    WireCheck(label: "OPEN LOGI : NU-TYPE AT LOGIN", on: loginEnabled, p: p) {
                         do {
                             if loginEnabled { try SMAppService.mainApp.unregister() } else { try SMAppService.mainApp.register() }
                             loginError = nil
@@ -1105,7 +1105,7 @@ struct DeviceTab: View {
             }
             if state.logiOptionsRunning {
                 WireCard(title: "LOGI OPTIONS DETECTED", jp: "競合", p: p) {
-                    Text("IT COMPETES WITH LOGI LITE FOR THE MOUSE BUTTONS. QUIT OR UNINSTALL IT.")
+                    Text("IT COMPETES WITH LOGI : NU-TYPE FOR THE MOUSE BUTTONS. QUIT OR UNINSTALL IT.")
                         .font(WireFont.label(9)).foregroundStyle(p.ink)
                     WireMiniButton(title: "STOP LOGI OPTIONS NOW", p: p) { AppDelegate.quitLogiOptions() }
                 }
