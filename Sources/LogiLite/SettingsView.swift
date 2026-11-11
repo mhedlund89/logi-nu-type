@@ -717,7 +717,7 @@ struct KeyboardTab: View {
 
     /// Marker positions on the vector drawing.
     private static let anchors: [Part: CGPoint] = [
-        .easySwitch: KeyboardDrawing.easySwitchAnchor,   // F1–F3 carry the Easy-Switch channels
+        .easySwitch: KeyboardDrawing.easySwitchAnchor,   // Easy-Switch keys 1–3 (F13–F15) above home / page up
         .fKeys: KeyboardDrawing.fKeysAnchor,
         .fn: KeyboardDrawing.fnAnchor,
         .status: KeyboardDrawing.statusAnchor,           // status light on the logo strip
@@ -758,7 +758,7 @@ struct KeyboardTab: View {
             return kb.chargeState == .discharging ? "BATTERY \(level)" : "\(kb.chargeState.label) · \(level)"
         }()
         let rows: [(Part, String, String)] = [
-            (.easySwitch, "EASY-SWITCH · F1–F3", channel),
+            (.easySwitch, "EASY-SWITCH · F13–F15", channel),
             (.fKeys, "TOP ROW · F1–F12", modeText),
             (.fn, "FN KEY", state.keyboardMediaKeysFirst == false ? "HOLD FOR MEDIA KEYS" : "HOLD FOR F1–F12"),
             (.status, "STATUS LIGHT", battery),
@@ -869,7 +869,7 @@ struct KeyboardTab: View {
     }
 
     private var easySwitchCard: some View {
-        WireCard(title: "1 EASY-SWITCH", jp: "チャンネル", fig: "F1 · F2 · F3", p: p) {
+        WireCard(title: "1 EASY-SWITCH", jp: "チャンネル", fig: "F13 · F14 · F15", p: p) {
             HStack(spacing: 0) {
                 ForEach(0..<(kb?.hostCount ?? 3), id: \.self) { i in
                     let here = kb?.host == i

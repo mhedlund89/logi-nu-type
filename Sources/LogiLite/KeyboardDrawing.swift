@@ -10,11 +10,14 @@ struct KeyboardDrawing: View {
     static let designSize = CGSize(width: 23.9 * u, height: 7.6 * u)
 
     enum Legend {
-        case text(String)                 // single centred label
-        case pair(String, String)         // shifted symbol over base
-        case mod(String)                  // modifier word, bottom-left
-        case fkey(String, String)         // SF Symbol or glyph, plus the F-number
-        case symbol(String)               // SF Symbol only
+        case text(String)                         // single centred label
+        case pair(String, String)                 // shifted symbol over base
+        case mod(String, trailing: Bool)          // modifier word in a bottom corner
+        case modSym(String, String)               // modifier glyph over its word (control, option, command)
+        case iconWord(String, String)             // SF Symbol over a word (forward delete)
+        case fkey(String, String?)                // SF Symbol, plus the F-number bottom right
+        case channel(Int, String)                 // Easy-Switch channel: LED, number, computer icon, F-number
+        case symbol(String, CGFloat)              // SF Symbol only, at a relative size
     }
 
     struct Key {
@@ -30,13 +33,16 @@ struct KeyboardDrawing: View {
     static let pad: CGFloat = 0.45, caseTop: CGFloat = 0.55
     static let fnRowY: CGFloat = caseTop + pad, fnRowH: CGFloat = 0.8
     static func rowY(_ r: Int) -> CGFloat { fnRowY + fnRowH + 0.3 + CGFloat(r) }
+    /// The top row spans the 15u main block with 14 equal keys: esc, F1–F12, eject.
+    static let fW: CGFloat = 15.0 / 14.0
+    static let navX = pad + 15.5, padX = pad + 19
 
     // Marker anchors (design coordinates).
-    static let easySwitchAnchor = center(pad + 1.5 + 1.125, fnRowY, 1.125, fnRowH)        // F2
-    static let fKeysAnchor = center(pad + 1.5 + 1.125 * 7, fnRowY, 1.125, fnRowH)          // F8
-    static let fnAnchor = center(pad + 12.25, rowY(4), 1.25, 1)
-    static let keysAnchor = center(pad + 20, fnRowY, 1, fnRowH)                           // screenshot key
-    static let statusAnchor = CGPoint(x: (23.9 - 2.4) * u, y: 0.3 * u)
+    static let easySwitchAnchor = center(navX + 1, fnRowY, 1, fnRowH)                  // 2 / F14
+    static let fKeysAnchor = center(pad + fW * 8, fnRowY, fW, fnRowH)                   // F8
+    static let fnAnchor = center(navX, rowY(0))                                        // fn, above delete
+    static let keysAnchor = center(padX + 1, fnRowY, 1, fnRowH)                         // screenshot / F17
+    static let statusAnchor = CGPoint(x: (23.9 - 1.2) * u, y: 0.3 * u)
 
     static let keys: [Key] = {
         var k: [Key] = []
@@ -45,47 +51,47 @@ struct KeyboardDrawing: View {
             var x = startX
             for (w, l) in items { k.append(Key(x: x, y: rowY(r), w: w, h: 1, legend: l)); x += w }
         }
-        // Function row.
+        func top(_ x: CGFloat, _ w: CGFloat, _ l: Legend) { k.append(Key(x: x, y: fnRowY, w: w, h: fnRowH, legend: l)) }
+        // Top row, as printed on the MX Keys Mac.
         let fns: [Legend] = [
-            .fkey("1", "F1"), .fkey("2", "F2"), .fkey("3", "F3"),
-            .fkey("rectangle.3.group", "F4"), .fkey("light.min", "F5"), .fkey("light.max", "F6"),
+            .mod("esc", trailing: false),
+            .fkey("sun.min", "F1"), .fkey("sun.max", "F2"), .fkey("rectangle.3.group", "F3"),
+            .fkey("square.grid.3x3", "F4"), .fkey("light.min", "F5"), .fkey("light.max", "F6"),
             .fkey("backward.fill", "F7"), .fkey("playpause.fill", "F8"), .fkey("forward.fill", "F9"),
             .fkey("speaker.slash.fill", "F10"), .fkey("speaker.wave.1.fill", "F11"), .fkey("speaker.wave.3.fill", "F12"),
+            .fkey("eject.fill", nil),
         ]
-        k.append(Key(x: x0, y: fnRowY, w: 1.5, h: fnRowH, legend: .mod("esc")))
-        for (i, l) in fns.enumerated() { k.append(Key(x: x0 + 1.5 + 1.125 * CGFloat(i), y: fnRowY, w: 1.125, h: fnRowH, legend: l)) }
-        let navX = x0 + 15.5, padX = x0 + 19
-        for (i, s) in ["sun.min", "sun.max", "square.grid.3x3"].enumerated() {
-            k.append(Key(x: navX + CGFloat(i), y: fnRowY, w: 1, h: fnRowH, legend: .symbol(s)))
-        }
-        for (i, s) in ["plus.forwardslash.minus", "camera.viewfinder", "contextualmenu.and.cursorarrow", "lock"].enumerated() {
-            k.append(Key(x: padX + CGFloat(i), y: fnRowY, w: 1, h: fnRowH, legend: .symbol(s)))
+        for (i, l) in fns.enumerated() { top(x0 + fW * CGFloat(i), fW, l) }
+        for i in 0..<3 { top(navX + CGFloat(i), 1, .channel(i + 1, "F\(13 + i)")) }
+        for (i, s) in ["plus.forwardslash.minus", "camera.fill", "list.bullet.rectangle", "lock.open.fill"].enumerated() {
+            top(padX + CGFloat(i), 1, .fkey(s, "F\(16 + i)"))
         }
         // Main block (US ANSI, Mac legends).
         let nums: [(String, String)] = [("~", "`"), ("!", "1"), ("@", "2"), ("#", "3"), ("$", "4"), ("%", "5"), ("^", "6"),
                                         ("&", "7"), ("*", "8"), ("(", "9"), (")", "0"), ("_", "-"), ("+", "=")]
-        row(0, nums.map { (1, .pair($0.0, $0.1)) } + [(2, .mod("delete"))])
-        row(1, [(1.5, .mod("tab"))] + "QWERTYUIOP".map { (1, .text(String($0))) }
+        row(0, nums.map { (1, .pair($0.0, $0.1)) } + [(2, .mod("delete", trailing: true))])
+        row(1, [(1.5, .mod("tab", trailing: false))] + "QWERTYUIOP".map { (1, .text(String($0))) }
             + [(1, .pair("{", "[")), (1, .pair("}", "]")), (1.5, .pair("|", "\\"))])
-        row(2, [(1.75, .mod("caps lock"))] + "ASDFGHJKL".map { (1, .text(String($0))) }
-            + [(1, .pair(":", ";")), (1, .pair("\"", "'")), (2.25, .mod("return"))])
-        row(3, [(2.25, .mod("shift"))] + "ZXCVBNM".map { (1, .text(String($0))) }
-            + [(1, .pair("<", ",")), (1, .pair(">", ".")), (1, .pair("?", "/")), (2.75, .mod("shift"))])
-        row(4, [(1.25, .mod("control")), (1.25, .mod("option")), (1.5, .mod("command")), (6.75, .text("")),
-                (1.5, .mod("command")), (1.25, .mod("fn")), (1.25, .mod("option"))])
+        row(2, [(1.75, .mod("caps lock", trailing: false))] + "ASDFGHJKL".map { (1, .text(String($0))) }
+            + [(1, .pair(":", ";")), (1, .pair("\"", "'")), (2.25, .mod("return", trailing: true))])
+        row(3, [(2.25, .mod("shift", trailing: false))] + "ZXCVBNM".map { (1, .text(String($0))) }
+            + [(1, .pair("<", ",")), (1, .pair(">", ".")), (1, .pair("?", "/")), (2.75, .mod("shift", trailing: true))])
+        row(4, [(1.5, .modSym("⌃", "control")), (1.25, .modSym("⌥", "option")), (1.5, .modSym("⌘", "command")),
+                (6.5, .text("")),
+                (1.5, .modSym("⌘", "command")), (1.25, .modSym("⌥", "option")), (1.5, .modSym("⌃", "control"))])
         // Navigation cluster.
-        row(0, [(1, .mod("fn")), (1, .mod("home")), (1, .mod("pg up"))], startX: navX)
-        row(1, [(1, .mod("del ⌦")), (1, .mod("end")), (1, .mod("pg dn"))], startX: navX)
-        row(3, [(1, .symbol("arrowtriangle.up.fill"))], startX: navX + 1)
-        row(4, [(1, .symbol("arrowtriangle.left.fill")), (1, .symbol("arrowtriangle.down.fill")),
-                (1, .symbol("arrowtriangle.right.fill"))], startX: navX)
+        row(0, [(1, .text("fn")), (1, .text("home")), (1, .pair("page", "up"))], startX: navX)
+        row(1, [(1, .iconWord("delete.right", "delete")), (1, .text("end")), (1, .pair("page", "down"))], startX: navX)
+        row(3, [(1, .symbol("arrowtriangle.up.fill", 0.16))], startX: navX + 1)
+        row(4, [(1, .symbol("arrowtriangle.left.fill", 0.16)), (1, .symbol("arrowtriangle.down.fill", 0.16)),
+                (1, .symbol("arrowtriangle.right.fill", 0.16))], startX: navX)
         // Numeric keypad (Mac layout).
-        row(0, [(1, .mod("clear")), (1, .text("=")), (1, .text("/")), (1, .text("*"))], startX: padX)
+        row(0, [(1, .text("clear")), (1, .text("=")), (1, .text("/")), (1, .text("*"))], startX: padX)
         row(1, [(1, .text("7")), (1, .text("8")), (1, .text("9")), (1, .text("−"))], startX: padX)
         row(2, [(1, .text("4")), (1, .text("5")), (1, .text("6")), (1, .text("+"))], startX: padX)
         row(3, [(1, .text("1")), (1, .text("2")), (1, .text("3"))], startX: padX)
         row(4, [(2, .text("0")), (1, .text("."))], startX: padX)
-        k.append(Key(x: padX + 3, y: rowY(3), w: 1, h: 2, legend: .mod("enter")))
+        k.append(Key(x: padX + 3, y: rowY(3), w: 1, h: 2, legend: .mod("enter", trailing: true)))
         return k
     }()
 
@@ -137,28 +143,41 @@ struct KeyboardDrawing: View {
     private func legend(_ ctx: GraphicsContext, _ l: Legend, in rect: CGRect, u: CGFloat, ink: Color) {
         let c = CGPoint(x: rect.midX, y: rect.midY)
         func font(_ size: CGFloat, _ w: Font.Weight = .medium) -> Font { .system(size: size * u, weight: w, design: .rounded) }
+        func draw(_ t: Text, _ at: CGPoint, _ anchor: UnitPoint = .center) { ctx.draw(t.foregroundColor(ink), at: at, anchor: anchor) }
+        func fLabel(_ f: String) {
+            ctx.draw(Text(f).font(font(0.12)).foregroundColor(ink.opacity(0.75)),
+                     at: CGPoint(x: rect.maxX - 0.05 * u, y: rect.maxY - 0.03 * u), anchor: .bottomTrailing)
+        }
         switch l {
         case .text(let t):
-            ctx.draw(Text(t).font(font(0.34)).foregroundColor(ink), at: c)
+            // Words (fn, home, clear) are set smaller than single characters.
+            draw(Text(t).font(font(t.count > 1 ? 0.2 : 0.34)), c)
         case .pair(let top, let base):
-            ctx.draw(Text(top).font(font(0.24)).foregroundColor(ink), at: CGPoint(x: c.x, y: rect.minY + rect.height * 0.3))
-            ctx.draw(Text(base).font(font(0.27)).foregroundColor(ink), at: CGPoint(x: c.x, y: rect.minY + rect.height * 0.7))
-        case .mod(let t):
-            ctx.draw(Text(t).font(font(0.2)).foregroundColor(ink),
-                     at: CGPoint(x: rect.minX + 0.1 * u, y: rect.maxY - 0.12 * u), anchor: .bottomLeading)
-        case .fkey(let glyph, let f):
-            if glyph.count == 1 {
-                // Easy-Switch channel: number with its LED dot.
-                ctx.draw(Text(glyph).font(font(0.28, .semibold)).foregroundColor(ink), at: CGPoint(x: c.x - 0.08 * u, y: c.y - 0.03 * u))
-                ctx.stroke(Path(ellipseIn: CGRect(x: c.x + 0.1 * u, y: c.y - 0.2 * u, width: 0.09 * u, height: 0.09 * u)),
-                           with: .color(ink), lineWidth: 0.7)
-            } else {
-                ctx.draw(Text(Image(systemName: glyph)).font(font(0.22)).foregroundColor(ink), at: CGPoint(x: c.x, y: c.y - 0.04 * u))
-            }
-            ctx.draw(Text(f).font(font(0.13)).foregroundColor(ink.opacity(0.7)),
-                     at: CGPoint(x: rect.maxX - 0.05 * u, y: rect.maxY - 0.03 * u), anchor: .bottomTrailing)
-        case .symbol(let name):
-            ctx.draw(Text(Image(systemName: name)).font(font(0.24)).foregroundColor(ink), at: c)
+            let word = top.count > 1
+            draw(Text(top).font(font(word ? 0.18 : 0.24)), CGPoint(x: c.x, y: rect.minY + rect.height * (word ? 0.36 : 0.3)))
+            draw(Text(base).font(font(word ? 0.18 : 0.27)), CGPoint(x: c.x, y: rect.minY + rect.height * (word ? 0.64 : 0.7)))
+        case .mod(let t, let trailing):
+            draw(Text(t).font(font(0.2)),
+                 CGPoint(x: trailing ? rect.maxX - 0.1 * u : rect.minX + 0.1 * u, y: rect.maxY - 0.12 * u),
+                 trailing ? .bottomTrailing : .bottomLeading)
+        case .modSym(let glyph, let word):
+            draw(Text(glyph).font(font(0.22)), CGPoint(x: rect.minX + 0.12 * u, y: rect.minY + 0.08 * u), .topLeading)
+            draw(Text(word).font(font(0.18)), CGPoint(x: rect.minX + 0.1 * u, y: rect.maxY - 0.1 * u), .bottomLeading)
+        case .iconWord(let name, let word):
+            draw(Text(Image(systemName: name)).font(font(0.2)), CGPoint(x: c.x, y: rect.minY + rect.height * 0.36))
+            draw(Text(word).font(font(0.18)), CGPoint(x: c.x, y: rect.minY + rect.height * 0.68))
+        case .fkey(let name, let f):
+            draw(Text(Image(systemName: name)).font(font(0.2)), CGPoint(x: c.x, y: c.y - 0.05 * u))
+            if let f { fLabel(f) }
+        case .channel(let n, let f):
+            // LED dot in the corner, then the channel number and the computer/phone icon.
+            ctx.stroke(Path(ellipseIn: CGRect(x: rect.minX + 0.06 * u, y: rect.minY + 0.05 * u, width: 0.07 * u, height: 0.07 * u)),
+                       with: .color(ink), lineWidth: 0.7)
+            draw(Text("\(n)").font(font(0.22, .semibold)), CGPoint(x: c.x - 0.14 * u, y: c.y + 0.02 * u))
+            draw(Text(Image(systemName: "laptopcomputer.and.iphone")).font(font(0.17)), CGPoint(x: c.x + 0.14 * u, y: c.y + 0.02 * u))
+            fLabel(f)
+        case .symbol(let name, let size):
+            draw(Text(Image(systemName: name)).font(font(size)), c)
         }
     }
 }
