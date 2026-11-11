@@ -94,9 +94,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func updateStatusButton() {
         guard let button = statusItem?.button else { return }
-        let img = NSImage(systemSymbolName: "computermouse.fill", accessibilityDescription: "Logi : nu-type")
-        img?.isTemplate = true
-        button.image = img
+        if button.image == nil { button.image = NUMark.image() }
         button.imagePosition = .imageLeading
         if let m = state.mouse, m.charging || m.battery != nil {
             let level = m.battery.map { "\($0)%" } ?? ""
@@ -138,6 +136,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
         settingsWindow?.makeKeyAndOrderFront(nil)
     }
+}
+
+// Developer aid: `LogiLite --render-mark out.png` draws the menu bar mark large, on light and dark bars.
+if let i = CommandLine.arguments.firstIndex(of: "--render-mark"), CommandLine.arguments.count > i + 1 {
+    let out = URL(fileURLWithPath: CommandLine.arguments[i + 1])
+    let mark = NUMark.image()
+    let view = VStack(spacing: 0) {
+        ForEach([false, true], id: \.self) { dark in
+            HStack(spacing: 6) {
+                Image(nsImage: mark).renderingMode(.template)
+                Text("90%").font(.system(size: 13, weight: .medium))
+                Spacer()
+                Text("Wed 11 Nov 9:41").font(.system(size: 13, weight: .medium))
+            }
+            .foregroundStyle(dark ? Color.white : Color.black)
+            .padding(.horizontal, 10).frame(width: 260, height: 24)
+            .background(dark ? Color(white: 0.17) : Color(white: 0.92))
+        }
+    }
+    MainActor.assumeIsolated {
+        let r = ImageRenderer(content: view); r.scale = 4
+        if let cg = r.cgImage, let png = NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:]) {
+            try? png.write(to: out); print("wrote \(out.path)")
+        }
+    }
+    exit(0)
 }
 
 // Developer aid: `LogiLite --render-panel out.png [dark]` draws the menu panel with sample data and exits.
