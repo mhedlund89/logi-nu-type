@@ -5,10 +5,13 @@ cd "$(dirname "$0")"
 
 # SwiftUI macros (@State) need full Xcode, not just the Command Line Tools.
 if [[ -z "${DEVELOPER_DIR:-}" && -d /Applications/Xcode.app ]]; then export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer; fi
-swift build -c release
+# Universal binary (Apple Silicon + Intel), minimum macOS 12, so it also runs on older Intel Macs
+# such as a 2013 Mac Pro on Monterey.
+swift build -c release --arch arm64 --arch x86_64
+BIN="$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)/LogiNuType"
 APP="build/Logi nu-type.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp -f .build/release/LogiNuType "$APP/Contents/MacOS/LogiNuType"
+cp -f "$BIN" "$APP/Contents/MacOS/LogiNuType"
 cp -f Support/Info.plist "$APP/Contents/Info.plist"
 cp -f Support/Resources/mouse-cutaway.png "$APP/Contents/Resources/"
 cp -f Support/AppIcon.icns "$APP/Contents/Resources/"

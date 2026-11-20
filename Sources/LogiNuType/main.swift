@@ -119,7 +119,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func openSettings() {
         if settingsWindow == nil {
             let host = NSHostingController(rootView: SettingsView(state: state, engine: engine))
-            host.sizingOptions = [.minSize]   // SwiftUI sets only the minimum; the window stays freely resizable
+            if #available(macOS 13.0, *) {
+                host.sizingOptions = [.minSize]   // SwiftUI sets only the minimum; the window stays freely resizable
+            }
             let w = NSWindow(contentViewController: host)
             w.title = "Logi : nu-type"
             w.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
@@ -155,6 +157,7 @@ if let i = CommandLine.arguments.firstIndex(of: "--render-mark"), CommandLine.ar
             .background(dark ? Color(white: 0.17) : Color(white: 0.92))
         }
     }
+    guard #available(macOS 13.0, *) else { print("--render-mark needs macOS 13 or later"); exit(1) }
     MainActor.assumeIsolated {
         let r = ImageRenderer(content: view); r.scale = 4
         if let cg = r.cgImage, let png = NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:]) {
@@ -188,6 +191,7 @@ if let i = CommandLine.arguments.firstIndex(of: "--render-panel"), CommandLine.a
         view = AnyView(MenuPanel(state: state, engine: Engine(state: state), openSettings: {}, quitLogiOptions: {}, openPrivacy: { _ in })
             .environment(\.colorScheme, scheme))
     }
+    guard #available(macOS 13.0, *) else { print("--render-panel needs macOS 13 or later"); exit(1) }
     MainActor.assumeIsolated {
         let renderer = ImageRenderer(content: view)
         renderer.scale = 2

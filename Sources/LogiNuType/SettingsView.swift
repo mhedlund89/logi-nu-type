@@ -1,5 +1,4 @@
 import AppKit
-import ServiceManagement
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -292,7 +291,7 @@ struct MouseTab: View {
                 inspector.frame(minWidth: WireFont.w(300), maxWidth: .infinity)
             }
         }
-        .onChange(of: part) { _, _ in direction = .click }
+        .onChange(of: part) { _ in direction = .click }
     }
 
     private var profileBar: some View {
@@ -489,13 +488,16 @@ struct GestureCross: View {
     let p: WirePalette
 
     var body: some View {
-        Grid(horizontalSpacing: 4, verticalSpacing: 4) {
-            GridRow { Color.clear.gridCellUnsizedAxes([.horizontal, .vertical]); cell(.up, "▲"); Color.clear.gridCellUnsizedAxes([.horizontal, .vertical]) }
-            GridRow { cell(.left, "◀"); cell(.click, "●"); cell(.right, "▶") }
-            GridRow { Color.clear.gridCellUnsizedAxes([.horizontal, .vertical]); cell(.down, "▼"); Color.clear.gridCellUnsizedAxes([.horizontal, .vertical]) }
+        // Stacks rather than Grid, so it also runs on macOS 12. Every cell is a fixed size.
+        VStack(spacing: 4) {
+            HStack(spacing: 4) { blank; cell(.up, "▲"); blank }
+            HStack(spacing: 4) { cell(.left, "◀"); cell(.click, "●"); cell(.right, "▶") }
+            HStack(spacing: 4) { blank; cell(.down, "▼"); blank }
         }
         .frame(maxWidth: .infinity)
     }
+
+    private var blank: some View { Color.clear.frame(width: WireFont.w(104), height: WireFont.w(34)) }
 
     private func cell(_ d: GestureDirection, _ glyph: String) -> some View {
         let on = selected == d
@@ -699,7 +701,7 @@ struct PointerTab: View {
             }
         }
         .onAppear { dpi = Double(state.dpi ?? state.config.pointer.dpi ?? 1000) }
-        .onChange(of: state.dpi) { _, new in if let new { dpi = Double(new) } }
+        .onChange(of: state.dpi) { new in if let new { dpi = Double(new) } }
     }
 }
 
@@ -1067,7 +1069,7 @@ struct FlowEdgePicker: View {
 struct DeviceTab: View {
     @ObservedObject var state: AppState
     let p: WirePalette
-    @State private var loginEnabled = SMAppService.mainApp.status == .enabled
+    @State private var loginEnabled = LoginItem.isEnabled
     @State private var loginError: String?
 
     var body: some View {
@@ -1090,10 +1092,10 @@ struct DeviceTab: View {
                 WireCard(title: "STARTUP", jp: "起動", fig: "FIG. 4-3", p: p) {
                     WireCheck(label: "OPEN LOGI : NU-TYPE AT LOGIN", on: loginEnabled, p: p) {
                         do {
-                            if loginEnabled { try SMAppService.mainApp.unregister() } else { try SMAppService.mainApp.register() }
+                            try LoginItem.setEnabled(!loginEnabled)
                             loginError = nil
                         } catch { loginError = error.localizedDescription }
-                        loginEnabled = SMAppService.mainApp.status == .enabled
+                        loginEnabled = LoginItem.isEnabled
                     }
                     if let e = loginError { Text(e.uppercased()).font(WireFont.label(8)).foregroundStyle(p.ink) }
                 }

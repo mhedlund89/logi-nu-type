@@ -18,6 +18,11 @@ A small menu bar replacement for Logi Options, built for the MX Master 2S and MX
 
 Needs Xcode installed (SwiftUI macros aren't in the Command Line Tools).
 
+The app is a universal binary (Apple Silicon + Intel) and runs on macOS 12 Monterey or later,
+so older Intel Macs such as a 2013 Mac Pro work too. To move it to another Mac, copy
+`build/Logi nu-type.app` across (zip it first), put it in Applications, and right-click → Open
+the first time, since it isn't notarized.
+
 ## First run
 1. Allow **Accessibility** and **Input Monitoring** for Logi : nu-type in System Settings → Privacy & Security,
    then use "Relaunch" in Settings → General (or quit and reopen).
